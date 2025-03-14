@@ -6,6 +6,6 @@ echo "Generating Go parser..."
 mkdir -p pkg/parser
 
 # Generate Go parser
-antlr -Dlanguage=Go -o pkg/parser grammar/FilterQuery.g4
+antlr -visitor -Dlanguage=Go -o pkg/parser grammar/FilterQuery.g4
 
 echo "Go parser generation complete"

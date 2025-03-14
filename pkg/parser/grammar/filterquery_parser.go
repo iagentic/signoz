@@ -372,6 +372,16 @@ func (s *QueryContext) ExitRule(listener antlr.ParseTreeListener) {
 	}
 }
 
+func (s *QueryContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitQuery(s)
+
+	default:
+		return t.VisitChildren(s)
+	}
+}
+
 func (p *FilterQueryParser) Query() (localctx IQueryContext) {
 	localctx = NewQueryContext(p, p.GetParserRuleContext(), p.GetState())
 	p.EnterRule(localctx, 0, FilterQueryParserRULE_query)
@@ -536,6 +546,16 @@ func (s *ExpressionContext) ExitRule(listener antlr.ParseTreeListener) {
 	}
 }
 
+func (s *ExpressionContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitExpression(s)
+
+	default:
+		return t.VisitChildren(s)
+	}
+}
+
 func (p *FilterQueryParser) Expression() (localctx IExpressionContext) {
 	localctx = NewExpressionContext(p, p.GetParserRuleContext(), p.GetState())
 	p.EnterRule(localctx, 2, FilterQueryParserRULE_expression)
@@ -673,6 +693,16 @@ func (s *OrExpressionContext) EnterRule(listener antlr.ParseTreeListener) {
 func (s *OrExpressionContext) ExitRule(listener antlr.ParseTreeListener) {
 	if listenerT, ok := listener.(FilterQueryListener); ok {
 		listenerT.ExitOrExpression(s)
+	}
+}
+
+func (s *OrExpressionContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitOrExpression(s)
+
+	default:
+		return t.VisitChildren(s)
 	}
 }
 
@@ -853,6 +883,16 @@ func (s *AndExpressionContext) ExitRule(listener antlr.ParseTreeListener) {
 	}
 }
 
+func (s *AndExpressionContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitAndExpression(s)
+
+	default:
+		return t.VisitChildren(s)
+	}
+}
+
 func (p *FilterQueryParser) AndExpression() (localctx IAndExpressionContext) {
 	localctx = NewAndExpressionContext(p, p.GetParserRuleContext(), p.GetState())
 	p.EnterRule(localctx, 6, FilterQueryParserRULE_andExpression)
@@ -1015,6 +1055,16 @@ func (s *UnaryExpressionContext) EnterRule(listener antlr.ParseTreeListener) {
 func (s *UnaryExpressionContext) ExitRule(listener antlr.ParseTreeListener) {
 	if listenerT, ok := listener.(FilterQueryListener); ok {
 		listenerT.ExitUnaryExpression(s)
+	}
+}
+
+func (s *UnaryExpressionContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitUnaryExpression(s)
+
+	default:
+		return t.VisitChildren(s)
 	}
 }
 
@@ -1200,6 +1250,16 @@ func (s *PrimaryContext) EnterRule(listener antlr.ParseTreeListener) {
 func (s *PrimaryContext) ExitRule(listener antlr.ParseTreeListener) {
 	if listenerT, ok := listener.(FilterQueryListener); ok {
 		listenerT.ExitPrimary(s)
+	}
+}
+
+func (s *PrimaryContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitPrimary(s)
+
+	default:
+		return t.VisitChildren(s)
 	}
 }
 
@@ -1516,6 +1576,16 @@ func (s *ComparisonContext) EnterRule(listener antlr.ParseTreeListener) {
 func (s *ComparisonContext) ExitRule(listener antlr.ParseTreeListener) {
 	if listenerT, ok := listener.(FilterQueryListener); ok {
 		listenerT.ExitComparison(s)
+	}
+}
+
+func (s *ComparisonContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitComparison(s)
+
+	default:
+		return t.VisitChildren(s)
 	}
 }
 
@@ -2038,6 +2108,16 @@ func (s *InClauseContext) ExitRule(listener antlr.ParseTreeListener) {
 	}
 }
 
+func (s *InClauseContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitInClause(s)
+
+	default:
+		return t.VisitChildren(s)
+	}
+}
+
 func (p *FilterQueryParser) InClause() (localctx IInClauseContext) {
 	localctx = NewInClauseContext(p, p.GetParserRuleContext(), p.GetState())
 	p.EnterRule(localctx, 14, FilterQueryParserRULE_inClause)
@@ -2236,6 +2316,16 @@ func (s *NotInClauseContext) EnterRule(listener antlr.ParseTreeListener) {
 func (s *NotInClauseContext) ExitRule(listener antlr.ParseTreeListener) {
 	if listenerT, ok := listener.(FilterQueryListener); ok {
 		listenerT.ExitNotInClause(s)
+	}
+}
+
+func (s *NotInClauseContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitNotInClause(s)
+
+	default:
+		return t.VisitChildren(s)
 	}
 }
 
@@ -2462,6 +2552,16 @@ func (s *ValueListContext) ExitRule(listener antlr.ParseTreeListener) {
 	}
 }
 
+func (s *ValueListContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitValueList(s)
+
+	default:
+		return t.VisitChildren(s)
+	}
+}
+
 func (p *FilterQueryParser) ValueList() (localctx IValueListContext) {
 	localctx = NewValueListContext(p, p.GetParserRuleContext(), p.GetState())
 	p.EnterRule(localctx, 18, FilterQueryParserRULE_valueList)
@@ -2581,6 +2681,16 @@ func (s *FullTextContext) EnterRule(listener antlr.ParseTreeListener) {
 func (s *FullTextContext) ExitRule(listener antlr.ParseTreeListener) {
 	if listenerT, ok := listener.(FilterQueryListener); ok {
 		listenerT.ExitFullText(s)
+	}
+}
+
+func (s *FullTextContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitFullText(s)
+
+	default:
+		return t.VisitChildren(s)
 	}
 }
 
@@ -2719,6 +2829,16 @@ func (s *FunctionCallContext) EnterRule(listener antlr.ParseTreeListener) {
 func (s *FunctionCallContext) ExitRule(listener antlr.ParseTreeListener) {
 	if listenerT, ok := listener.(FilterQueryListener); ok {
 		listenerT.ExitFunctionCall(s)
+	}
+}
+
+func (s *FunctionCallContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitFunctionCall(s)
+
+	default:
+		return t.VisitChildren(s)
 	}
 }
 
@@ -2891,6 +3011,16 @@ func (s *FunctionParamListContext) ExitRule(listener antlr.ParseTreeListener) {
 	}
 }
 
+func (s *FunctionParamListContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitFunctionParamList(s)
+
+	default:
+		return t.VisitChildren(s)
+	}
+}
+
 func (p *FilterQueryParser) FunctionParamList() (localctx IFunctionParamListContext) {
 	localctx = NewFunctionParamListContext(p, p.GetParserRuleContext(), p.GetState())
 	p.EnterRule(localctx, 24, FilterQueryParserRULE_functionParamList)
@@ -3059,6 +3189,16 @@ func (s *FunctionParamContext) ExitRule(listener antlr.ParseTreeListener) {
 	}
 }
 
+func (s *FunctionParamContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitFunctionParam(s)
+
+	default:
+		return t.VisitChildren(s)
+	}
+}
+
 func (p *FilterQueryParser) FunctionParam() (localctx IFunctionParamContext) {
 	localctx = NewFunctionParamContext(p, p.GetParserRuleContext(), p.GetState())
 	p.EnterRule(localctx, 26, FilterQueryParserRULE_functionParam)
@@ -3200,6 +3340,16 @@ func (s *ArrayContext) ExitRule(listener antlr.ParseTreeListener) {
 	}
 }
 
+func (s *ArrayContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitArray(s)
+
+	default:
+		return t.VisitChildren(s)
+	}
+}
+
 func (p *FilterQueryParser) Array() (localctx IArrayContext) {
 	localctx = NewArrayContext(p, p.GetParserRuleContext(), p.GetState())
 	p.EnterRule(localctx, 28, FilterQueryParserRULE_array)
@@ -3318,6 +3468,16 @@ func (s *ValueContext) ExitRule(listener antlr.ParseTreeListener) {
 	}
 }
 
+func (s *ValueContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitValue(s)
+
+	default:
+		return t.VisitChildren(s)
+	}
+}
+
 func (p *FilterQueryParser) Value() (localctx IValueContext) {
 	localctx = NewValueContext(p, p.GetParserRuleContext(), p.GetState())
 	p.EnterRule(localctx, 30, FilterQueryParserRULE_value)
@@ -3416,6 +3576,16 @@ func (s *KeyContext) EnterRule(listener antlr.ParseTreeListener) {
 func (s *KeyContext) ExitRule(listener antlr.ParseTreeListener) {
 	if listenerT, ok := listener.(FilterQueryListener); ok {
 		listenerT.ExitKey(s)
+	}
+}
+
+func (s *KeyContext) Accept(visitor antlr.ParseTreeVisitor) interface{} {
+	switch t := visitor.(type) {
+	case FilterQueryVisitor:
+		return t.VisitKey(s)
+
+	default:
+		return t.VisitChildren(s)
 	}
 }
 
