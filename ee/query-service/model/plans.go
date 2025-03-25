@@ -145,7 +145,7 @@ var BasicPlan = basemodel.FeatureSet{
 	},
 	basemodel.Feature{
 		Name:       basemodel.AnomalyDetection,
-		Active:     false,
+		Active:     true,
 		Usage:      0,
 		UsageLimit: -1,
 		Route:      "",

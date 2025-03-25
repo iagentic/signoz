@@ -217,3 +217,15 @@ gor-split-signoz-community: build-frontend-static
 
 gor-merge:
 	${GORELEASER_BIN} continue --merge
+.PHONY: parsers go-parser js-parser
+
+# Generate all parsers
+parsers: go-parser js-parser
+
+# Generate Go parser
+go-parser:
+	@./scripts/grammar/generate-go-parser.sh
+
+# Generate JavaScript parser
+js-parser:
+	@./scripts/grammar/generate-js-parser.sh
