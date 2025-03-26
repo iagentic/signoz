@@ -86,40 +86,58 @@ func (v *ClickHouseVisitor) Visit(tree antlr.ParseTree) interface{} {
 
 	switch t := tree.(type) {
 	case *QueryContext:
+		fmt.Println("QueryContext")
 		return v.VisitQuery(t)
 	case *ExpressionContext:
+		fmt.Println("ExpressionContext")
 		return v.VisitExpression(t)
 	case *OrExpressionContext:
+		fmt.Println("OrExpressionContext")
 		return v.VisitOrExpression(t)
 	case *AndExpressionContext:
+		fmt.Println("AndExpressionContext")
 		return v.VisitAndExpression(t)
 	case *UnaryExpressionContext:
+		fmt.Println("UnaryExpressionContext")
 		return v.VisitUnaryExpression(t)
 	case *PrimaryContext:
+		fmt.Println("PrimaryContext")
 		return v.VisitPrimary(t)
 	case *ComparisonContext:
+		fmt.Println("ComparisonContext")
 		return v.VisitComparison(t)
 	case *InClauseContext:
+		fmt.Println("InClauseContext")
 		return v.VisitInClause(t)
 	case *NotInClauseContext:
+		fmt.Println("NotInClauseContext")
 		return v.VisitNotInClause(t)
 	case *ValueListContext:
+		fmt.Println("ValueListContext")
 		return v.VisitValueList(t)
 	case *FullTextContext:
+		fmt.Println("FullTextContext")
 		return v.VisitFullText(t)
 	case *FunctionCallContext:
+		fmt.Println("FunctionCallContext")
 		return v.VisitFunctionCall(t)
 	case *FunctionParamListContext:
+		fmt.Println("FunctionParamListContext")
 		return v.VisitFunctionParamList(t)
 	case *FunctionParamContext:
+		fmt.Println("FunctionParamContext")
 		return v.VisitFunctionParam(t)
 	case *ArrayContext:
+		fmt.Println("ArrayContext")
 		return v.VisitArray(t)
 	case *ValueContext:
+		fmt.Println("ValueContext")
 		return v.VisitValue(t)
 	case *KeyContext:
+		fmt.Println("KeyContext")
 		return v.VisitKey(t)
 	default:
+		fmt.Println("default")
 		return ""
 	}
 }
@@ -215,6 +233,17 @@ func (v *ClickHouseVisitor) VisitPrimary(ctx *PrimaryContext) interface{} {
 		return v.Visit(ctx.FunctionCall())
 	} else if ctx.FullText() != nil {
 		return v.Visit(ctx.FullText())
+	}
+
+	fmt.Println("ctx.GetChildCount()", ctx.GetChildCount())
+	// Handle standalone key as a full text search term
+	if ctx.GetChildCount() == 1 {
+		child := ctx.GetChild(0)
+		if keyCtx, ok := child.(*KeyContext); ok {
+			// create a full text search condition on the body field
+			keyText := keyCtx.GetText()
+			return fmt.Sprintf("lower(body) LIKE '%%%s%%' OR has(mapValues(attributes_string, '%%%s%%'))", strings.ToLower(keyText), keyText)
+		}
 	}
 
 	return "" // Should not happen with valid input
@@ -414,6 +443,8 @@ func (v *ClickHouseVisitor) VisitValue(ctx *ValueContext) interface{} {
 			return "1"
 		}
 		return "0"
+	} else if ctx.KEY() != nil {
+		return ctx.KEY().GetText()
 	}
 
 	return "" // Should not happen with valid input

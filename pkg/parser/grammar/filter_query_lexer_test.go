@@ -9,8 +9,8 @@ import (
 )
 
 var queries = []string{
-	`service.name="redis"`,
-	`service.name=redis`,
+	// `service.name="redis"`,
+	// `service.name=redis`,
 	// `http.status_code = 200`,
 	// `paid_user=true`,
 	// `service.name!="frontend"`,
@@ -27,7 +27,7 @@ var queries = []string{
 	// `email like "%signoz.io%"`,
 	// `user.name LIKE "%srikanth%"`,
 	// `email not like "%signoz.io%"`,
-	`user.name NOT LIKE "%srikanth%"`,
+	// `user.name NOT LIKE "%srikanth%"`,
 	// `email ilike "%signoz.io%"`,
 	// `user.name ILIKE "%srikanth%"`,
 	// `http.status_code between 200 and 300`,
@@ -72,8 +72,9 @@ var queries = []string{
 	// `service.name IN ("redis", "mysql")`,
 	// `service.name NOT IN ("redis", "mysql") http.status_code = 200`,
 	// `body contains "error" k8s.pod.name="pod-123"`,
-	`syntax error: ']' came as a complete surprise to me 343$#$@#@#^$ 454%$^^&% #@#@ aksa :a;aa;s 121`,
-	`[traceId=fd1dc36b345b4296a5dfce66449b71d4; spanId=ab72922b5290c943; jobId=audience:5800-sync:42794; method=null]`,
+	// `syntax error: ']' came as a complete surprise to me 343$#$@#@#^$ 454%$^^&% #@#@ aksa :a;aa;s 121`,
+	// `[traceId=fd1dc36b345b4296a5dfce66449b71d4; spanId=ab72922b5290c943; jobId=audience:5800-sync:42794; method=null]`,
+	"boghy>=nil",
 }
 
 func TestLexer(t *testing.T) {

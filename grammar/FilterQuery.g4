@@ -41,6 +41,7 @@ primary
     | comparison
     | functionCall
     | fullText
+    | key
     ;
 
 /*
