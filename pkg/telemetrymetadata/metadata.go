@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"go.signoz.io/signoz/pkg/errors"
-	"go.signoz.io/signoz/pkg/telemetrystore"
-	"go.signoz.io/signoz/pkg/types"
+	"github.com/SigNoz/signoz/pkg/errors"
+	"github.com/SigNoz/signoz/pkg/telemetrystore"
+	"github.com/SigNoz/signoz/pkg/types"
 )
 
 var (
