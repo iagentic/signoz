@@ -1,7 +1,27 @@
 package types
 
-import "context"
+import (
+	"context"
+	"strings"
 
+	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
+)
+
+// Signal is the signal of the telemetry data.
+type Signal string
+
+const (
+	SignalTraces  Signal = "traces"
+	SignalLogs    Signal = "logs"
+	SignalMetrics Signal = "metrics"
+)
+
+func (s Signal) String() string {
+	return string(s)
+}
+
+// FieldContext is the context of the field. It is expected to be used to disambiguate b/w
+// different contexts of the same field.
 type FieldContext string
 
 const (
@@ -18,6 +38,28 @@ const (
 
 func (f FieldContext) String() string {
 	return string(f)
+}
+
+func FieldContextToTagType(f FieldContext) string {
+	switch f {
+	case FieldContextResource:
+		return "resource"
+	case FieldContextScope:
+		return "scope"
+	case FieldContextAttribute:
+		return "attribute"
+	case FieldContextLog:
+		return "logfield"
+	case FieldContextSpan:
+		return "spanfield"
+	case FieldContextTrace:
+		return "tracefield"
+	case FieldContextMetric:
+		return "metricfield"
+	case FieldContextEvent:
+		return "eventfield"
+	}
+	return ""
 }
 
 func FieldContextFromString(s string) FieldContext {
@@ -41,15 +83,17 @@ func FieldContextFromString(s string) FieldContext {
 	}
 }
 
+// FieldDataType is the data type of the field. It is expected to be used to disambiguate b/w
+// different data types of the same field.
 type FieldDataType string
 
 const (
-	FieldDataTypeString FieldDataType = "string"
-	FieldDataTypeBool   FieldDataType = "bool"
-	FieldDataTypeInt    FieldDataType = "int"
-	FieldDataTypeFloat  FieldDataType = "float"
-	FieldDataTypeNumber FieldDataType = "number"
-	FieldDataTypeAll    FieldDataType = "all"
+	FieldDataTypeString  FieldDataType = "string"
+	FieldDataTypeBool    FieldDataType = "bool"
+	FieldDataTypeInt64   FieldDataType = "int64"
+	FieldDataTypeFloat64 FieldDataType = "float64"
+	FieldDataTypeNumber  FieldDataType = "number"
+	FieldDataTypeAll     FieldDataType = "all"
 )
 
 func (f FieldDataType) String() string {
@@ -57,19 +101,32 @@ func (f FieldDataType) String() string {
 }
 
 func FieldDataTypeFromString(s string) FieldDataType {
-	switch s {
+	switch strings.ToLower(s) {
 	case "string":
 		return FieldDataTypeString
 	case "bool":
 		return FieldDataTypeBool
-	case "int":
-		return FieldDataTypeInt
-	case "float":
-		return FieldDataTypeFloat
+	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64":
+		return FieldDataTypeNumber
+	case "float", "float64", "double", "float32", "decimal":
+		return FieldDataTypeNumber
 	case "number":
 		return FieldDataTypeNumber
 	default:
 		return FieldDataTypeAll
+	}
+}
+
+func FieldDataTypeToTagType(f FieldDataType) string {
+	switch f {
+	case FieldDataTypeString:
+		return "string"
+	case FieldDataTypeBool:
+		return "bool"
+	case FieldDataTypeNumber:
+		return "float64"
+	default:
+		return ""
 	}
 }
 
@@ -84,6 +141,7 @@ type TelemetryFieldKey struct {
 	Name          string        `json:"name"`
 	Description   string        `json:"description"`
 	Unit          string        `json:"unit"`
+	Signal        Signal        `json:"signal"`
 	FieldContext  FieldContext  `json:"fieldContext"`
 	FieldDataType FieldDataType `json:"fieldDataType"`
 	Materialized  bool          `json:"-"`
@@ -94,18 +152,28 @@ type ExistingFieldSelection struct {
 	Value any               `json:"value"`
 }
 
+type MetricContext struct {
+	MetricName string `json:"metricName"`
+}
+
 type FieldKeySelector struct {
-	FieldContext  FieldContext         `json:"fieldContext"`
-	FieldDataType FieldDataType        `json:"fieldDataType"`
-	Name          string               `json:"name"`
-	SelectorType  FieldKeySelectorType `json:"selectorType"`
-	Limit         int                  `json:"limit"`
+	StartUnixMilli int64                `json:"startUnixMilli"`
+	EndUnixMilli   int64                `json:"endUnixMilli"`
+	Signal         Signal               `json:"signal"`
+	FieldContext   FieldContext         `json:"fieldContext"`
+	FieldDataType  FieldDataType        `json:"fieldDataType"`
+	Name           string               `json:"name"`
+	SelectorType   FieldKeySelectorType `json:"selectorType"`
+	Limit          int                  `json:"limit"`
+	MetricContext  *MetricContext       `json:"metricContext,omitempty"`
 }
 
 type Metadata interface {
 	// GetKeys returns a map of field keys by name, there can be multiple keys with the same name
 	// if they have different types or data types.
 	GetKeys(ctx context.Context, fieldKeySelector FieldKeySelector) (map[string][]TelemetryFieldKey, error)
+
+	GetKeysMulti(ctx context.Context, fieldKeySelectors []FieldKeySelector) (map[string][]TelemetryFieldKey, error)
 
 	// GetKey returns a list of keys with the given name.
 	GetKey(ctx context.Context, fieldKeySelector FieldKeySelector) ([]TelemetryFieldKey, error)
@@ -116,4 +184,8 @@ type Metadata interface {
 
 	// GetAllValues returns a list of all values.
 	GetAllValues(ctx context.Context, fieldKeySelector FieldKeySelector) (any, error)
+}
+
+type KeyToColumnMapper interface {
+	GetColumn(ctx context.Context, key TelemetryFieldKey) (schema.Column, error)
 }

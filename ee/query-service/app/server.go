@@ -25,6 +25,7 @@ import (
 	"github.com/SigNoz/signoz/pkg/query-service/auth"
 	"github.com/SigNoz/signoz/pkg/signoz"
 	"github.com/SigNoz/signoz/pkg/sqlstore"
+	"github.com/SigNoz/signoz/pkg/telemetrymetadata"
 	"github.com/SigNoz/signoz/pkg/types"
 	"github.com/SigNoz/signoz/pkg/types/authtypes"
 	"github.com/SigNoz/signoz/pkg/web"
@@ -143,6 +144,80 @@ func NewServer(serverOptions *ServerOptions) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	metastore, err := telemetrymetadata.NewTelemetryMetaStore(
+		serverOptions.SigNoz.TelemetryStore,
+		baseconst.SIGNOZ_TRACE_DBNAME,
+		baseconst.SIGNOZ_TAG_ATTRIBUTES_V2_TABLENAME,
+		baseconst.SIGNOZ_SPAN_INDEX_V3,
+		baseconst.SIGNOZ_METRIC_DBNAME,
+		baseconst.SIGNOZ_TIMESERIES_v4_1DAY_TABLENAME,
+		baseconst.SIGNOZ_TIMESERIES_v4_1DAY_TABLENAME,
+		baseconst.SIGNOZ_LOG_DBNAME,
+		baseconst.SIGNOZ_LOG_V2_TABLENAME,
+		baseconst.SIGNOZ_TAG_ATTRIBUTES_V2_TABLENAME,
+		baseconst.SIGNOZ_METADATA_DBNAME,
+		baseconst.SIGNOZ_ATTRIBUTES_METADATA_LOCAL_TABLENAME,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	spanKeys, err := metastore.GetKeys(context.Background(), types.FieldKeySelector{
+		FieldContext:  types.FieldContextSpan,
+		FieldDataType: types.FieldDataTypeString,
+		Name:          "htt",
+		Limit:         10,
+	})
+	fmt.Println("spanKeys", spanKeys, err)
+	logsKeys, err := metastore.GetKeys(context.Background(), types.FieldKeySelector{
+		FieldContext:  types.FieldContextLog,
+		FieldDataType: types.FieldDataTypeString,
+		Name:          "pro",
+		Limit:         10,
+	})
+	fmt.Println("logsKeys", logsKeys, err)
+
+	metricKeys, err := metastore.GetKeys(context.Background(), types.FieldKeySelector{
+		FieldContext:  types.FieldContextMetric,
+		FieldDataType: types.FieldDataTypeString,
+		Name:          "htt",
+		Limit:         10,
+	})
+	fmt.Println("metricKeys", metricKeys, err)
+
+	spanKeysMulti, err := metastore.GetKeysMulti(context.Background(), []types.FieldKeySelector{
+		{
+			FieldContext:  types.FieldContextSpan,
+			FieldDataType: types.FieldDataTypeString,
+			Name:          "htt",
+		},
+		{
+			FieldContext:  types.FieldContextSpan,
+			FieldDataType: types.FieldDataTypeString,
+			Name:          "mess",
+			Limit:         10,
+		},
+	})
+
+	fmt.Println("spanKeysMulti", spanKeysMulti, err)
+
+	relatedValues, err := metastore.GetRelatedValues(context.Background(), types.FieldKeySelector{
+		FieldContext:  types.FieldContextSpan,
+		FieldDataType: types.FieldDataTypeString,
+		Name:          "http.method",
+		Limit:         10,
+	}, []types.ExistingFieldSelection{
+		{
+			Key: types.TelemetryFieldKey{
+				Name:          "service.name",
+				FieldContext:  types.FieldContextResource,
+				FieldDataType: types.FieldDataTypeString,
+			},
+			Value: "demo-app",
+		},
+	})
+	fmt.Println("relatedValues", relatedValues, err)
 
 	var reader interfaces.DataConnector
 	qb := db.NewDataConnector(
