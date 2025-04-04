@@ -11,9 +11,10 @@ import (
 type Signal string
 
 const (
-	SignalTraces  Signal = "traces"
-	SignalLogs    Signal = "logs"
-	SignalMetrics Signal = "metrics"
+	SignalTraces      Signal = "traces"
+	SignalLogs        Signal = "logs"
+	SignalMetrics     Signal = "metrics"
+	SignalUnspecified Signal = ""
 )
 
 func (s Signal) String() string {
@@ -25,15 +26,15 @@ func (s Signal) String() string {
 type FieldContext string
 
 const (
-	FieldContextMetric    FieldContext = "metric"
-	FieldContextLog       FieldContext = "log"
-	FieldContextSpan      FieldContext = "span"
-	FieldContextTrace     FieldContext = "trace"
-	FieldContextResource  FieldContext = "resource"
-	FieldContextScope     FieldContext = "scope"
-	FieldContextAttribute FieldContext = "attribute"
-	FieldContextEvent     FieldContext = "event"
-	FieldContextAll       FieldContext = "all"
+	FieldContextMetric      FieldContext = "metric"
+	FieldContextLog         FieldContext = "log"
+	FieldContextSpan        FieldContext = "span"
+	FieldContextTrace       FieldContext = "trace"
+	FieldContextResource    FieldContext = "resource"
+	FieldContextScope       FieldContext = "scope"
+	FieldContextAttribute   FieldContext = "attribute"
+	FieldContextEvent       FieldContext = "event"
+	FieldContextUnspecified FieldContext = ""
 )
 
 func (f FieldContext) String() string {
@@ -47,7 +48,7 @@ func FieldContextToTagType(f FieldContext) string {
 	case FieldContextScope:
 		return "scope"
 	case FieldContextAttribute:
-		return "attribute"
+		return "tag"
 	case FieldContextLog:
 		return "logfield"
 	case FieldContextSpan:
@@ -79,7 +80,7 @@ func FieldContextFromString(s string) FieldContext {
 	case "metric":
 		return FieldContextMetric
 	default:
-		return FieldContextAll
+		return FieldContextUnspecified
 	}
 }
 
@@ -90,10 +91,11 @@ type FieldDataType string
 const (
 	FieldDataTypeString  FieldDataType = "string"
 	FieldDataTypeBool    FieldDataType = "bool"
-	FieldDataTypeInt64   FieldDataType = "int64"
 	FieldDataTypeFloat64 FieldDataType = "float64"
-	FieldDataTypeNumber  FieldDataType = "number"
-	FieldDataTypeAll     FieldDataType = "all"
+	// int64 and number are synonyms for float64
+	FieldDataTypeInt64       FieldDataType = "int64"
+	FieldDataTypeNumber      FieldDataType = "number"
+	FieldDataTypeUnspecified FieldDataType = ""
 )
 
 func (f FieldDataType) String() string {
@@ -113,17 +115,17 @@ func FieldDataTypeFromString(s string) FieldDataType {
 	case "number":
 		return FieldDataTypeNumber
 	default:
-		return FieldDataTypeAll
+		return FieldDataTypeUnspecified
 	}
 }
 
-func FieldDataTypeToTagType(f FieldDataType) string {
+func FieldDataTypeToTagDataType(f FieldDataType) string {
 	switch f {
 	case FieldDataTypeString:
 		return "string"
 	case FieldDataTypeBool:
 		return "bool"
-	case FieldDataTypeNumber:
+	case FieldDataTypeNumber, FieldDataTypeInt64, FieldDataTypeFloat64:
 		return "float64"
 	default:
 		return ""

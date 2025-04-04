@@ -72,7 +72,7 @@ func TestGetKeys(t *testing.T) {
 	query := `SELECT.*`
 
 	mock.ExpectQuery(query).
-		WithArgs("%http.method%", 10).
+		WithArgs("%http.method%", types.FieldContextToTagType(types.FieldContextSpan), types.FieldDataTypeToTagDataType(types.FieldDataTypeString), 10).
 		WillReturnRows(cmock.NewRows([]cmock.ColumnType{
 			{Name: "tag_key", Type: "String"},
 			{Name: "tag_type", Type: "String"},
@@ -80,6 +80,7 @@ func TestGetKeys(t *testing.T) {
 			{Name: "priority", Type: "UInt8"},
 		}, [][]any{{"http.method", "tag", "String", 1}, {"http.method", "tag", "String", 1}}))
 	keys, err := metadata.GetKeys(context.Background(), types.FieldKeySelector{
+		Signal:        types.SignalTraces,
 		FieldContext:  types.FieldContextSpan,
 		FieldDataType: types.FieldDataTypeString,
 		Name:          "http.method",

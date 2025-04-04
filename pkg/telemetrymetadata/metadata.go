@@ -22,13 +22,13 @@ var (
 type telemetryMetaStore struct {
 	telemetrystore         telemetrystore.TelemetryStore
 	tracesDBName           string
-	tracesMetadataTblName  string
+	tracesFieldsTblName    string
 	indexV3TblName         string
 	metricsDBName          string
-	metricsMetadataTblName string
+	metricsFieldsTblName   string
 	timeseries1WTblName    string
 	logsDBName             string
-	logsMetadataTblName    string
+	logsFieldsTblName      string
 	logsV2TblName          string
 	relatedMetadataDBName  string
 	relatedMetadataTblName string
@@ -37,28 +37,28 @@ type telemetryMetaStore struct {
 func NewTelemetryMetaStore(
 	telemetrystore telemetrystore.TelemetryStore,
 	tracesDBName string,
-	tracesMetadataTblName string,
+	tracesFieldsTblName string,
 	indexV3TblName string,
 	metricsDBName string,
-	metricsMetadataTblName string,
+	metricsFieldsTblName string,
 	timeseries1WTblName string,
 	logsDBName string,
 	logsV2TblName string,
-	logsMetadataTblName string,
+	logsFieldsTblName string,
 	relatedMetadataDBName string,
 	relatedMetadataTblName string,
 ) (types.Metadata, error) {
 	return &telemetryMetaStore{
 		telemetrystore:         telemetrystore,
 		tracesDBName:           tracesDBName,
-		tracesMetadataTblName:  tracesMetadataTblName,
+		tracesFieldsTblName:    tracesFieldsTblName,
 		indexV3TblName:         indexV3TblName,
 		metricsDBName:          metricsDBName,
-		metricsMetadataTblName: metricsMetadataTblName,
+		metricsFieldsTblName:   metricsFieldsTblName,
 		timeseries1WTblName:    timeseries1WTblName,
 		logsDBName:             logsDBName,
 		logsV2TblName:          logsV2TblName,
-		logsMetadataTblName:    logsMetadataTblName,
+		logsFieldsTblName:      logsFieldsTblName,
 		relatedMetadataDBName:  relatedMetadataDBName,
 		relatedMetadataTblName: relatedMetadataTblName,
 	}, nil
@@ -70,7 +70,7 @@ func (t *telemetryMetaStore) tracesTblStatementToFieldKeys(ctx context.Context) 
 	statements := []types.ShowCreateTableStatement{}
 	err := t.telemetrystore.ClickHouseDB().Select(ctx, &statements, query)
 	if err != nil {
-		return nil, ErrFailedToGetTblStatement
+		return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetTblStatement.Error())
 	}
 
 	return ExtractFieldKeysFromTblStatement(statements[0].Statement)
@@ -109,15 +109,15 @@ func (t *telemetryMetaStore) getTracesKeys(ctx context.Context, fieldKeySelector
 		}
 
 		// now look at the field context
-		if fieldKeySelector.FieldContext != types.FieldContextAll {
+		if fieldKeySelector.FieldContext != types.FieldContextUnspecified {
 			whereClause += " AND tag_type = ?"
 			args = append(args, types.FieldContextToTagType(fieldKeySelector.FieldContext))
 		}
 
 		// now look at the field data type
-		if fieldKeySelector.FieldDataType != types.FieldDataTypeAll {
+		if fieldKeySelector.FieldDataType != types.FieldDataTypeUnspecified {
 			whereClause += " AND tag_data_type = ?"
-			args = append(args, types.FieldDataTypeToTagType(fieldKeySelector.FieldDataType))
+			args = append(args, types.FieldDataTypeToTagDataType(fieldKeySelector.FieldDataType))
 		}
 
 		if idx != len(fieldKeySelectors)-1 {
@@ -147,12 +147,12 @@ func (t *telemetryMetaStore) getTracesKeys(ctx context.Context, fieldKeySelector
 		ORDER BY priority
 		LIMIT ?`,
 		t.tracesDBName,
-		t.tracesMetadataTblName,
+		t.tracesFieldsTblName,
 	)
 
 	rows, err := t.telemetrystore.ClickHouseDB().Query(ctx, query, args...)
 	if err != nil {
-		return nil, ErrFailedToGetTracesKeys
+		return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetTracesKeys.Error())
 	}
 	defer rows.Close()
 	keys := []types.TelemetryFieldKey{}
@@ -161,12 +161,13 @@ func (t *telemetryMetaStore) getTracesKeys(ctx context.Context, fieldKeySelector
 		var priority uint8
 		err = rows.Scan(&name, &typ, &dataType, &priority)
 		if err != nil {
-			return nil, ErrFailedToGetTracesKeys
+			return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetTracesKeys.Error())
 		}
 		fieldContext := types.FieldContextFromString(typ)
 		fieldDataType := types.FieldDataTypeFromString(dataType)
 		key, ok := mapOfKeys[name+";"+fieldContext.String()+";"+fieldDataType.String()]
 
+		// if there is no materialised column, create a key with the field context and data type
 		if !ok {
 			key = types.TelemetryFieldKey{
 				Name:          name,
@@ -179,7 +180,7 @@ func (t *telemetryMetaStore) getTracesKeys(ctx context.Context, fieldKeySelector
 	}
 
 	if rows.Err() != nil {
-		return nil, ErrFailedToGetTracesKeys
+		return nil, errors.Wrapf(rows.Err(), errors.TypeInternal, errors.CodeInternal, ErrFailedToGetTracesKeys.Error())
 	}
 
 	return keys, nil
@@ -191,7 +192,7 @@ func (t *telemetryMetaStore) logsTblStatementToFieldKeys(ctx context.Context) ([
 	statements := []types.ShowCreateTableStatement{}
 	err := t.telemetrystore.ClickHouseDB().Select(ctx, &statements, query)
 	if err != nil {
-		return nil, ErrFailedToGetTblStatement
+		return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetTblStatement.Error())
 	}
 
 	return ExtractFieldKeysFromTblStatement(statements[0].Statement)
@@ -228,15 +229,15 @@ func (t *telemetryMetaStore) getLogsKeys(ctx context.Context, fieldKeySelectors 
 		}
 
 		// now look at the field context
-		if fieldKeySelector.FieldContext != types.FieldContextAll {
+		if fieldKeySelector.FieldContext != types.FieldContextUnspecified {
 			whereClause += " AND tag_type = ?"
 			args = append(args, types.FieldContextToTagType(fieldKeySelector.FieldContext))
 		}
 
 		// now look at the field data type
-		if fieldKeySelector.FieldDataType != types.FieldDataTypeAll {
+		if fieldKeySelector.FieldDataType != types.FieldDataTypeUnspecified {
 			whereClause += " AND tag_data_type = ?"
-			args = append(args, types.FieldDataTypeToTagType(fieldKeySelector.FieldDataType))
+			args = append(args, types.FieldDataTypeToTagDataType(fieldKeySelector.FieldDataType))
 		}
 
 		if idx != len(fieldKeySelectors)-1 {
@@ -266,12 +267,12 @@ func (t *telemetryMetaStore) getLogsKeys(ctx context.Context, fieldKeySelectors 
 		ORDER BY priority
 		LIMIT ?`,
 		t.logsDBName,
-		t.logsMetadataTblName,
+		t.logsFieldsTblName,
 	)
 
 	rows, err := t.telemetrystore.ClickHouseDB().Query(ctx, query, args...)
 	if err != nil {
-		return nil, ErrFailedToGetLogsKeys
+		return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetLogsKeys.Error())
 	}
 	defer rows.Close()
 	keys := []types.TelemetryFieldKey{}
@@ -280,12 +281,13 @@ func (t *telemetryMetaStore) getLogsKeys(ctx context.Context, fieldKeySelectors 
 		var priority uint8
 		err = rows.Scan(&name, &typ, &dataType, &priority)
 		if err != nil {
-			return nil, ErrFailedToGetLogsKeys
+			return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetLogsKeys.Error())
 		}
 		fieldContext := types.FieldContextFromString(typ)
 		fieldDataType := types.FieldDataTypeFromString(dataType)
 		key, ok := mapOfKeys[name+";"+fieldContext.String()+";"+fieldDataType.String()]
 
+		// if there is no materialised column, create a key with the field context and data type
 		if !ok {
 			key = types.TelemetryFieldKey{
 				Name:          name,
@@ -298,12 +300,14 @@ func (t *telemetryMetaStore) getLogsKeys(ctx context.Context, fieldKeySelectors 
 	}
 
 	if rows.Err() != nil {
-		return nil, ErrFailedToGetLogsKeys
+		return nil, errors.Wrapf(rows.Err(), errors.TypeInternal, errors.CodeInternal, ErrFailedToGetLogsKeys.Error())
 	}
 
 	return keys, nil
 }
 
+// getMetricsKeys returns the keys from the metrics that match the field selection criteria
+// TODO(srikanthccv): update the implementation after the dot metrics migration is done
 func (t *telemetryMetaStore) getMetricsKeys(ctx context.Context, fieldKeySelectors []types.FieldKeySelector) ([]types.TelemetryFieldKey, error) {
 	if len(fieldKeySelectors) == 0 {
 		return nil, nil
@@ -352,7 +356,7 @@ func (t *telemetryMetaStore) getMetricsKeys(ctx context.Context, fieldKeySelecto
 
 	rows, err := t.telemetrystore.ClickHouseDB().Query(ctx, query, args...)
 	if err != nil {
-		return nil, ErrFailedToGetMetricsKeys
+		return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetMetricsKeys.Error())
 	}
 	defer rows.Close()
 
@@ -361,7 +365,7 @@ func (t *telemetryMetaStore) getMetricsKeys(ctx context.Context, fieldKeySelecto
 		var name string
 		err = rows.Scan(&name)
 		if err != nil {
-			return nil, ErrFailedToGetMetricsKeys
+			return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetMetricsKeys.Error())
 		}
 		key := types.TelemetryFieldKey{
 			Name:          name,
@@ -372,7 +376,7 @@ func (t *telemetryMetaStore) getMetricsKeys(ctx context.Context, fieldKeySelecto
 	}
 
 	if rows.Err() != nil {
-		return nil, ErrFailedToGetMetricsKeys
+		return nil, errors.Wrapf(rows.Err(), errors.TypeInternal, errors.CodeInternal, ErrFailedToGetMetricsKeys.Error())
 	}
 
 	return keys, nil
@@ -388,6 +392,27 @@ func (t *telemetryMetaStore) GetKeys(ctx context.Context, fieldKeySelector types
 		keys, err = t.getLogsKeys(ctx, []types.FieldKeySelector{fieldKeySelector})
 	case types.SignalMetrics:
 		keys, err = t.getMetricsKeys(ctx, []types.FieldKeySelector{fieldKeySelector})
+	case types.SignalUnspecified:
+		// get traces keys
+		tracesKeys, err := t.getTracesKeys(ctx, []types.FieldKeySelector{fieldKeySelector})
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, tracesKeys...)
+
+		// get logs keys
+		logsKeys, err := t.getLogsKeys(ctx, []types.FieldKeySelector{fieldKeySelector})
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, logsKeys...)
+
+		// get metrics keys
+		metricsKeys, err := t.getMetricsKeys(ctx, []types.FieldKeySelector{fieldKeySelector})
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, metricsKeys...)
 	}
 	if err != nil {
 		return nil, err
