@@ -255,15 +255,6 @@ func TestGetCondition(t *testing.T) {
 	ctx := context.Background()
 	mapper := NewConditionBuilder()
 
-	// Helper function to get SQL string from condition for comparison
-	getConditionSQL := func(cond *sqlbuilder.SelectBuilder) string {
-		if cond == nil {
-			return ""
-		}
-		sql, _ := cond.BuildWithFlavor(sqlbuilder.ClickHouse)
-		return sql
-	}
-
 	testCases := []struct {
 		name          string
 		key           types.TelemetryFieldKey
@@ -537,12 +528,13 @@ func TestGetCondition(t *testing.T) {
 		sb := sqlbuilder.NewSelectBuilder()
 		t.Run(tc.name, func(t *testing.T) {
 			cond, err := mapper.GetCondition(ctx, tc.key, tc.operator, tc.value, sb)
+			sb.Where(cond)
 
 			if tc.expectedError != nil {
 				assert.Equal(t, tc.expectedError, err)
 			} else {
 				require.NoError(t, err)
-				sql := getConditionSQL(cond)
+				sql, _ := sb.BuildWithFlavor(sqlbuilder.ClickHouse)
 				assert.Contains(t, sql, tc.expectedSQL)
 			}
 		})
@@ -565,15 +557,6 @@ func TestColumnMapperImplementsInterface(t *testing.T) {
 func TestGetConditionMultiple(t *testing.T) {
 	ctx := context.Background()
 	mapper := NewConditionBuilder()
-
-	// Helper function to get SQL string from condition for comparison
-	getConditionSQL := func(cond *sqlbuilder.SelectBuilder) string {
-		if cond == nil {
-			return ""
-		}
-		sql, _ := cond.BuildWithFlavor(sqlbuilder.ClickHouse)
-		return sql
-	}
 
 	testCases := []struct {
 		name          string
@@ -607,7 +590,8 @@ func TestGetConditionMultiple(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var err error
 			for _, key := range tc.keys {
-				sb, err = mapper.GetCondition(ctx, key, tc.operator, tc.value, sb)
+				cond, err := mapper.GetCondition(ctx, key, tc.operator, tc.value, sb)
+				sb.Where(cond)
 				if err != nil {
 					t.Fatalf("Error getting condition for key %s: %v", key.Name, err)
 				}
@@ -617,7 +601,7 @@ func TestGetConditionMultiple(t *testing.T) {
 				assert.Equal(t, tc.expectedError, err)
 			} else {
 				require.NoError(t, err)
-				sql := getConditionSQL(sb)
+				sql, _ := sb.BuildWithFlavor(sqlbuilder.ClickHouse)
 				assert.Contains(t, sql, tc.expectedSQL)
 			}
 		})
