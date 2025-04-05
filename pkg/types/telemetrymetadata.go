@@ -196,5 +196,5 @@ type Metadata interface {
 
 type ConditionBuilder interface {
 	GetColumn(ctx context.Context, key TelemetryFieldKey) (*schema.Column, error)
-	GetCondition(ctx context.Context, key TelemetryFieldKey, operator FilterOperator, value any, sb *sqlbuilder.SelectBuilder) (*sqlbuilder.SelectBuilder, error)
+	GetCondition(ctx context.Context, key TelemetryFieldKey, operator FilterOperator, value any, sb *sqlbuilder.SelectBuilder) (string, error)
 }

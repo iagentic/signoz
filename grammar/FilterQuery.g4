@@ -5,10 +5,7 @@ grammar FilterQuery;
  */
 
 query
-    // You can allow a query to have one or more top-level expressions.
-    // Each expression can be separated by an explicit AND/OR or simply by whitespace
-    // (which we interpret as an implicit AND).
-    : expression ( (AND | OR) expression | expression )*
+    : expression
     EOF
     ;
 

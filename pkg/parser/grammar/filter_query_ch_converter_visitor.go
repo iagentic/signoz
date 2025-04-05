@@ -19,16 +19,19 @@ type ClickHouseVisitor struct {
 	fieldKeys        map[string][]types.TelemetryFieldKey
 	args             []any
 	errors           []string
+	builder          *sqlbuilder.SelectBuilder
 }
 
 // NewClickHouseVisitor creates a new ClickHouseVisitor
 func NewClickHouseVisitor(
 	conditionBuilder types.ConditionBuilder,
 	fieldKeys map[string][]types.TelemetryFieldKey,
+	builder *sqlbuilder.SelectBuilder,
 ) *ClickHouseVisitor {
 	return &ClickHouseVisitor{
 		conditionBuilder: conditionBuilder,
 		fieldKeys:        fieldKeys,
+		builder:          builder,
 	}
 }
 
@@ -132,7 +135,9 @@ func PrepareWhereClause(query string, metadataStore types.Metadata, conditionBui
 		return "", err
 	}
 
-	visitor := NewClickHouseVisitor(conditionBuilder, fieldKeys)
+	sb := sqlbuilder.NewSelectBuilder()
+
+	visitor := NewClickHouseVisitor(conditionBuilder, fieldKeys, sb)
 
 	// Set up error handling
 	errorListener := NewErrorListener()
@@ -154,6 +159,7 @@ func PrepareWhereClause(query string, metadataStore types.Metadata, conditionBui
 
 	// Visit the parse tree with our ClickHouse visitor
 	whereClause := visitor.Visit(tree)
+	fmt.Println("whereClause", whereClause, visitor.args)
 
 	// Convert result to string, handling nil cases
 	if whereClause == nil {
@@ -228,37 +234,18 @@ func (v *ClickHouseVisitor) Visit(tree antlr.ParseTree) any {
 	}
 }
 
-// VisitQuery handles the root query node
 func (v *ClickHouseVisitor) VisitQuery(ctx *QueryContext) any {
 	expressions := ctx.AllExpression()
 	if len(expressions) == 0 {
 		return ""
 	}
 
-	// Visit the first expression
-	result := v.Visit(expressions[0]).(string)
+	result := v.Visit(expressions[0])
+	v.builder.Where(result.(string))
 
-	// Process any additional expressions (with implicit/explicit AND/OR)
-	for i := 1; i < len(expressions); i++ {
-		// Check if there's an AND/OR token between this expression and the previous one
-		var op string
-		// Check the token type at the position preceding the current expression
-		// This requires examining the tokens in the input stream
-		if i < len(expressions) && i > 0 {
-			// Check for explicit operators in the original query
-			// This is a simplification - in a real implementation, we'd need to examine tokens
-			// For now, we'll default to AND for simplicity
-			op = " AND "
-		} else {
-			// Implicit AND
-			op = " AND "
-		}
-
-		exprResult := v.Visit(expressions[i]).(string)
-		result = fmt.Sprintf("(%s)%s(%s)", result, op, exprResult)
-	}
-
-	return result
+	sql, args := v.builder.BuildWithFlavor(sqlbuilder.ClickHouse)
+	v.args = append(v.args, args...)
+	return sql
 }
 
 // VisitExpression passes through to the orExpression
@@ -278,7 +265,7 @@ func (v *ClickHouseVisitor) VisitOrExpression(ctx *OrExpressionContext) any {
 		parts[i] = v.Visit(expr).(string)
 	}
 
-	return strings.Join(parts, " OR ")
+	return v.builder.Or(parts...)
 }
 
 // VisitAndExpression handles AND expressions
@@ -288,12 +275,12 @@ func (v *ClickHouseVisitor) VisitAndExpression(ctx *AndExpressionContext) any {
 		return v.Visit(unaryExpressions[0])
 	}
 
-	parts := make([]string, len(unaryExpressions))
+	unaryExpressionConditions := make([]string, len(unaryExpressions))
 	for i, expr := range unaryExpressions {
-		parts[i] = v.Visit(expr).(string)
+		unaryExpressionConditions[i] = v.Visit(expr).(string)
 	}
 
-	return strings.Join(parts, " AND ")
+	return v.builder.And(unaryExpressionConditions...)
 }
 
 // VisitUnaryExpression handles NOT expressions
@@ -348,19 +335,14 @@ func (v *ClickHouseVisitor) VisitComparison(ctx *ComparisonContext) any {
 			op = types.FilterOperatorNotExists
 		}
 		var conds []string
-		var err error
 		for _, key := range keys {
-			sb := sqlbuilder.NewSelectBuilder()
-			sb, err = v.conditionBuilder.GetCondition(context.Background(), key, op, nil, sb)
+			condition, err := v.conditionBuilder.GetCondition(context.Background(), key, op, nil, v.builder)
 			if err != nil {
 				return ""
 			}
-			sql, args := sb.BuildWithFlavor(sqlbuilder.ClickHouse)
-			conds = append(conds, sql)
-			v.args = append(v.args, args...)
+			conds = append(conds, condition)
 		}
-		sql := sqlbuilder.NewSelectBuilder().Or(conds...)
-		return sql
+		return v.builder.Or(conds...)
 	}
 
 	// Handle IN clause
@@ -371,19 +353,14 @@ func (v *ClickHouseVisitor) VisitComparison(ctx *ComparisonContext) any {
 			op = types.FilterOperatorNotIn
 		}
 		var conds []string
-		var err error
 		for _, key := range keys {
-			sb := sqlbuilder.NewSelectBuilder()
-			sb, err = v.conditionBuilder.GetCondition(context.Background(), key, op, values, sb)
+			condition, err := v.conditionBuilder.GetCondition(context.Background(), key, op, values, v.builder)
 			if err != nil {
 				return ""
 			}
-			sql, args := sb.BuildWithFlavor(sqlbuilder.ClickHouse)
-			conds = append(conds, sql)
-			v.args = append(v.args, args...)
+			conds = append(conds, condition)
 		}
-		sql := sqlbuilder.NewSelectBuilder().Or(conds...)
-		return sql
+		return v.builder.Or(conds...)
 	}
 
 	// Handle BETWEEN
@@ -402,19 +379,14 @@ func (v *ClickHouseVisitor) VisitComparison(ctx *ComparisonContext) any {
 		value2 := v.Visit(values[1])
 
 		var conds []string
-		var err error
 		for _, key := range keys {
-			sb := sqlbuilder.NewSelectBuilder()
-			sb, err = v.conditionBuilder.GetCondition(context.Background(), key, op, []any{value1, value2}, sb)
+			condition, err := v.conditionBuilder.GetCondition(context.Background(), key, op, []any{value1, value2}, v.builder)
 			if err != nil {
 				return ""
 			}
-			sql, args := sb.BuildWithFlavor(sqlbuilder.ClickHouse)
-			conds = append(conds, sql)
-			v.args = append(v.args, args...)
+			conds = append(conds, condition)
 		}
-		sql := sqlbuilder.NewSelectBuilder().Or(conds...)
-		return sql
+		return v.builder.Or(conds...)
 	}
 
 	// Get all values for operations that need them
@@ -457,22 +429,14 @@ func (v *ClickHouseVisitor) VisitComparison(ctx *ComparisonContext) any {
 		}
 
 		var conds []string
-		var err error
 		for _, key := range keys {
-			fmt.Println("key", key)
-			sb := sqlbuilder.NewSelectBuilder()
-			sb, err = v.conditionBuilder.GetCondition(context.Background(), key, op, value, sb)
+			condition, err := v.conditionBuilder.GetCondition(context.Background(), key, op, value, v.builder)
 			if err != nil {
 				return ""
 			}
-			sql, args := sb.BuildWithFlavor(sqlbuilder.ClickHouse)
-			conds = append(conds, sql)
-			v.args = append(v.args, args...)
-			fmt.Println("sql", sql, "args", args)
+			conds = append(conds, condition)
 		}
-		sql := sqlbuilder.NewSelectBuilder().Or(conds...)
-		fmt.Println("sql", sql)
-		return sql
+		return v.builder.Or(conds...)
 	}
 
 	return "" // Should not happen with valid input

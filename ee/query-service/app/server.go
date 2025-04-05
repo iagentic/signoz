@@ -222,7 +222,7 @@ func NewServer(serverOptions *ServerOptions) (*Server, error) {
 	})
 	fmt.Println("relatedValues", relatedValues, err)
 
-	chQuery, err := parser.PrepareWhereClause(`service.name="demo-app" AND k8s.statefulset.name="demo-app"`, metastore, telemetrylogs.NewConditionBuilder())
+	chQuery, err := parser.PrepareWhereClause(`service.name="demo-app" AND k8s.statefulset.name="clickhouse" AND (http.status_code=200 OR http.status_code=404)`, metastore, telemetrylogs.NewConditionBuilder())
 	fmt.Println("chQuery", chQuery, err)
 
 	var reader interfaces.DataConnector

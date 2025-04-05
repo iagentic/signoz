@@ -151,76 +151,76 @@ func (c *conditionBuilder) GetCondition(
 	operator types.FilterOperator,
 	value any,
 	sb *sqlbuilder.SelectBuilder,
-) (*sqlbuilder.SelectBuilder, error) {
+) (string, error) {
 	column, err := c.GetColumn(ctx, key)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	fieldKeyName, err := c.getFieldKeyName(ctx, key)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	// regular operators
 	switch operator {
 	// regular operators
 	case types.FilterOperatorEqual:
-		sb.Where(sb.E(fieldKeyName, value))
+		return sb.E(fieldKeyName, value), nil
 	case types.FilterOperatorNotEqual:
-		sb.Where(sb.NE(fieldKeyName, value))
+		return sb.NE(fieldKeyName, value), nil
 	case types.FilterOperatorGreaterThan:
-		sb.Where(sb.G(fieldKeyName, value))
+		return sb.G(fieldKeyName, value), nil
 	case types.FilterOperatorGreaterThanOrEq:
-		sb.Where(sb.GE(fieldKeyName, value))
+		return sb.GE(fieldKeyName, value), nil
 	case types.FilterOperatorLessThan:
-		sb.Where(sb.LT(fieldKeyName, value))
+		return sb.LT(fieldKeyName, value), nil
 	case types.FilterOperatorLessThanOrEq:
-		sb.Where(sb.LE(fieldKeyName, value))
+		return sb.LE(fieldKeyName, value), nil
 
 	// like and not like
 	case types.FilterOperatorLike:
-		sb.Where(sb.Like(fieldKeyName, value))
+		return sb.Like(fieldKeyName, value), nil
 	case types.FilterOperatorNotLike:
-		sb.Where(sb.NotLike(fieldKeyName, value))
+		return sb.NotLike(fieldKeyName, value), nil
 	case types.FilterOperatorILike:
-		sb.Where(sb.ILike(fieldKeyName, value))
+		return sb.ILike(fieldKeyName, value), nil
 	case types.FilterOperatorNotILike:
-		sb.Where(sb.NotILike(fieldKeyName, value))
+		return sb.NotILike(fieldKeyName, value), nil
 
 	// between and not between
 	case types.FilterOperatorBetween:
 		values, ok := value.([]any)
 		if !ok {
-			return nil, ErrBetweenValues
+			return "", ErrBetweenValues
 		}
 		if len(values) != 2 {
-			return nil, ErrBetweenValues
+			return "", ErrBetweenValues
 		}
-		sb.Where(sb.Between(fieldKeyName, values[0], values[1]))
+		return sb.Between(fieldKeyName, values[0], values[1]), nil
 	case types.FilterOperatorNotBetween:
 		values, ok := value.([]any)
 		if !ok {
-			return nil, ErrBetweenValues
+			return "", ErrBetweenValues
 		}
 		if len(values) != 2 {
-			return nil, ErrBetweenValues
+			return "", ErrBetweenValues
 		}
-		sb.Where(sb.NotBetween(fieldKeyName, values[0], values[1]))
+		return sb.NotBetween(fieldKeyName, values[0], values[1]), nil
 
 	// in and not in
 	case types.FilterOperatorIn:
 		values, ok := value.([]any)
 		if !ok {
-			return nil, ErrInValues
+			return "", ErrInValues
 		}
-		sb.Where(sb.In(fieldKeyName, values...))
+		return sb.In(fieldKeyName, values...), nil
 	case types.FilterOperatorNotIn:
 		values, ok := value.([]any)
 		if !ok {
-			return nil, ErrInValues
+			return "", ErrInValues
 		}
-		sb.Where(sb.NotIn(fieldKeyName, values...))
+		return sb.NotIn(fieldKeyName, values...), nil
 
 	// exists and not exists
 	// but how could you live and have no story to tell
@@ -232,16 +232,16 @@ func (c *conditionBuilder) GetCondition(
 		case schema.ColumnTypeString, schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString}:
 			value = ""
 			if operator == types.FilterOperatorExists {
-				sb.Where(sb.NE(fieldKeyName, value))
+				return sb.NE(fieldKeyName, value), nil
 			} else {
-				sb.Where(sb.E(fieldKeyName, value))
+				return sb.E(fieldKeyName, value), nil
 			}
 		case schema.ColumnTypeUInt64, schema.ColumnTypeUInt32, schema.ColumnTypeUInt8:
 			value = 0
 			if operator == types.FilterOperatorExists {
-				sb.Where(sb.NE(fieldKeyName, value))
+				return sb.NE(fieldKeyName, value), nil
 			} else {
-				sb.Where(sb.E(fieldKeyName, value))
+				return sb.E(fieldKeyName, value), nil
 			}
 		case schema.MapColumnType{
 			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
@@ -255,13 +255,13 @@ func (c *conditionBuilder) GetCondition(
 		}:
 			leftOperand := fmt.Sprintf("mapContains(%s, '%s')", column.Name, key.Name)
 			if operator == types.FilterOperatorExists {
-				sb.Where(sb.E(leftOperand, true))
+				return sb.E(leftOperand, true), nil
 			} else {
-				sb.Where(sb.NE(leftOperand, true))
+				return sb.NE(leftOperand, true), nil
 			}
 		default:
-			return nil, fmt.Errorf("exists operator is not supported for column type %s", column.Type)
+			return "", fmt.Errorf("exists operator is not supported for column type %s", column.Type)
 		}
 	}
-	return sb, nil
+	return "", nil
 }
