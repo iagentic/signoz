@@ -29,9 +29,9 @@ var (
 			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
 			ValueType: schema.ColumnTypeString,
 		}},
-		"attributes_number": {Name: "attributes_int", Type: schema.MapColumnType{
+		"attributes_number": {Name: "attributes_number", Type: schema.MapColumnType{
 			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
-			ValueType: schema.ColumnTypeInt64,
+			ValueType: schema.ColumnTypeFloat64,
 		}},
 		"attributes_bool": {Name: "attributes_bool", Type: schema.MapColumnType{
 			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
@@ -124,7 +124,7 @@ func (c *conditionBuilder) getFieldKeyName(ctx context.Context, key types.Teleme
 		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
 	case schema.MapColumnType{
 		KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
-		ValueType: schema.ColumnTypeInt64,
+		ValueType: schema.ColumnTypeFloat64,
 	}:
 		// a key could have been materialized, if so return the materialized column name
 		if key.Materialized {
@@ -162,6 +162,45 @@ func (c *conditionBuilder) GetCondition(
 		return "", err
 	}
 
+	switch key.FieldDataType {
+	case types.FieldDataTypeString:
+		switch value.(type) {
+		case float64:
+			// try to convert the string value to to number
+			fieldKeyName = fmt.Sprintf(`toFloat64OrNull(%s)`, fieldKeyName)
+		case []any:
+			areFloats := true
+			for _, v := range value.([]any) {
+				if _, ok := v.(float64); !ok {
+					areFloats = false
+					break
+				}
+			}
+			if areFloats {
+				fieldKeyName = fmt.Sprintf(`toFloat64OrNull(%s)`, fieldKeyName)
+			}
+		case bool:
+			// we don't have a toBoolOrNull in ClickHouse, so we need to convert the bool to a string
+			value = fmt.Sprintf("%t", value)
+		case string:
+			// nothing to do
+		}
+	case types.FieldDataTypeFloat64, types.FieldDataTypeInt64, types.FieldDataTypeNumber:
+		switch value.(type) {
+		case string:
+			// try to convert the string value to to number
+			fieldKeyName = fmt.Sprintf(`toString(%s)`, fieldKeyName)
+		case float64:
+			// nothing to do
+		}
+	case types.FieldDataTypeBool:
+		switch value.(type) {
+		case string:
+			// try to convert the string value to to number
+			fieldKeyName = fmt.Sprintf(`toString(%s)`, fieldKeyName)
+		}
+	}
+
 	// regular operators
 	switch operator {
 	// regular operators
@@ -188,6 +227,17 @@ func (c *conditionBuilder) GetCondition(
 	case types.FilterOperatorNotILike:
 		return sb.NotILike(fieldKeyName, value), nil
 
+	case types.FilterOperatorContains:
+		return sb.ILike(fieldKeyName, value), nil
+	case types.FilterOperatorNotContains:
+		return sb.NotILike(fieldKeyName, value), nil
+
+	case types.FilterOperatorRegexp:
+		exp := fmt.Sprintf(`match(%s, %s)`, fieldKeyName, sb.Var(value))
+		return sb.And(exp), nil
+	case types.FilterOperatorNotRegexp:
+		exp := fmt.Sprintf(`not match(%s, %s)`, fieldKeyName, sb.Var(value))
+		return sb.And(exp), nil
 	// between and not between
 	case types.FilterOperatorBetween:
 		values, ok := value.([]any)

@@ -3,6 +3,7 @@ package parser
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/SigNoz/signoz/pkg/types"
@@ -11,27 +12,29 @@ import (
 	sqlbuilder "github.com/huandu/go-sqlbuilder"
 )
 
-// ClickHouseVisitor implements the FilterQueryVisitor interface
-// to convert the parsed filter expressions into ClickHouse WHERE clauses
-type ClickHouseVisitor struct {
+// ClickHouseWhereClauseVisitor implements the FilterQueryVisitor interface
+// to convert the parsed filter expressions into ClickHouse WHERE clause
+type ClickHouseWhereClauseVisitor struct {
 	conditionBuilder types.ConditionBuilder
 	warnings         []string
 	fieldKeys        map[string][]types.TelemetryFieldKey
-	args             []any
 	errors           []string
 	builder          *sqlbuilder.SelectBuilder
+	fullTextColumn   types.TelemetryFieldKey
 }
 
-// NewClickHouseVisitor creates a new ClickHouseVisitor
-func NewClickHouseVisitor(
+// NewClickHouseWhereClauseVisitor creates a new ClickHouseWhereClauseVisitor
+func NewClickHouseWhereClauseVisitor(
 	conditionBuilder types.ConditionBuilder,
 	fieldKeys map[string][]types.TelemetryFieldKey,
 	builder *sqlbuilder.SelectBuilder,
-) *ClickHouseVisitor {
-	return &ClickHouseVisitor{
+	fullTextColumn types.TelemetryFieldKey,
+) *ClickHouseWhereClauseVisitor {
+	return &ClickHouseWhereClauseVisitor{
 		conditionBuilder: conditionBuilder,
 		fieldKeys:        fieldKeys,
 		builder:          builder,
+		fullTextColumn:   fullTextColumn,
 	}
 }
 
@@ -111,14 +114,19 @@ func getFieldSelectorFromKey(key string) types.FieldKeySelector {
 }
 
 // PrepareWhereClause generates a ClickHouse compatible WHERE clause from the filter query
-func PrepareWhereClause(query string, fieldKeys map[string][]types.TelemetryFieldKey, conditionBuilder types.ConditionBuilder) (string, error) {
+func PrepareWhereClause(
+	query string,
+	fieldKeys map[string][]types.TelemetryFieldKey,
+	conditionBuilder types.ConditionBuilder,
+	fullTextColumn types.TelemetryFieldKey,
+) (string, []any, error) {
 	// Setup the ANTLR parsing pipeline
 	input := antlr.NewInputStream(query)
 	lexer := NewFilterQueryLexer(input)
 
 	sb := sqlbuilder.NewSelectBuilder()
 
-	visitor := NewClickHouseVisitor(conditionBuilder, fieldKeys, sb)
+	visitor := NewClickHouseWhereClauseVisitor(conditionBuilder, fieldKeys, sb, fullTextColumn)
 
 	// Set up error handling
 	errorListener := NewErrorListener()
@@ -135,22 +143,19 @@ func PrepareWhereClause(query string, fieldKeys map[string][]types.TelemetryFiel
 
 	// Handle syntax errors
 	if len(errorListener.Errors) > 0 {
-		return "", fmt.Errorf("syntax error in filter query: %s", strings.Join(errorListener.Errors, "; "))
+		return "", nil, fmt.Errorf("syntax error in filter query: %s", strings.Join(errorListener.Errors, "; "))
 	}
 
 	// Visit the parse tree with our ClickHouse visitor
-	whereClause := visitor.Visit(tree)
+	cond := visitor.Visit(tree).(string)
 
-	// Convert result to string, handling nil cases
-	if whereClause == nil {
-		return "", fmt.Errorf("failed to generate WHERE clause for query: %s", query)
-	}
+	whereClause, args := visitor.builder.Where(cond).BuildWithFlavor(sqlbuilder.ClickHouse)
 
-	return whereClause.(string), nil
+	return whereClause, args, nil
 }
 
 // Visit dispatches to the specific visit method based on node type
-func (v *ClickHouseVisitor) Visit(tree antlr.ParseTree) any {
+func (v *ClickHouseWhereClauseVisitor) Visit(tree antlr.ParseTree) any {
 	// Handle nil nodes to prevent panic
 	if tree == nil {
 		return ""
@@ -196,57 +201,50 @@ func (v *ClickHouseVisitor) Visit(tree antlr.ParseTree) any {
 	}
 }
 
-func (v *ClickHouseVisitor) VisitQuery(ctx *QueryContext) any {
-	expressions := ctx.AllExpression()
-	if len(expressions) == 0 {
-		return ""
-	}
+func (v *ClickHouseWhereClauseVisitor) VisitQuery(ctx *QueryContext) any {
 
-	result := v.Visit(expressions[0])
-	v.builder.Where(result.(string))
-
-	sql, args := v.builder.BuildWithFlavor(sqlbuilder.ClickHouse)
-	v.args = append(v.args, args...)
-	return sql
+	return v.Visit(ctx.Expression())
 }
 
 // VisitExpression passes through to the orExpression
-func (v *ClickHouseVisitor) VisitExpression(ctx *ExpressionContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitExpression(ctx *ExpressionContext) any {
 	return v.Visit(ctx.OrExpression())
 }
 
 // VisitOrExpression handles OR expressions
-func (v *ClickHouseVisitor) VisitOrExpression(ctx *OrExpressionContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitOrExpression(ctx *OrExpressionContext) any {
 	andExpressions := ctx.AllAndExpression()
-	if len(andExpressions) == 1 {
-		return v.Visit(andExpressions[0])
-	}
 
-	parts := make([]string, len(andExpressions))
+	andExpressionConditions := make([]string, len(andExpressions))
 	for i, expr := range andExpressions {
-		parts[i] = v.Visit(expr).(string)
+		andExpressionConditions[i] = v.Visit(expr).(string)
 	}
 
-	return v.builder.Or(parts...)
+	if len(andExpressionConditions) == 1 {
+		return andExpressionConditions[0]
+	}
+
+	return v.builder.Or(andExpressionConditions...)
 }
 
 // VisitAndExpression handles AND expressions
-func (v *ClickHouseVisitor) VisitAndExpression(ctx *AndExpressionContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitAndExpression(ctx *AndExpressionContext) any {
 	unaryExpressions := ctx.AllUnaryExpression()
-	if len(unaryExpressions) == 1 {
-		return v.Visit(unaryExpressions[0])
-	}
 
 	unaryExpressionConditions := make([]string, len(unaryExpressions))
 	for i, expr := range unaryExpressions {
 		unaryExpressionConditions[i] = v.Visit(expr).(string)
 	}
 
+	if len(unaryExpressionConditions) == 1 {
+		return unaryExpressionConditions[0]
+	}
+
 	return v.builder.And(unaryExpressionConditions...)
 }
 
 // VisitUnaryExpression handles NOT expressions
-func (v *ClickHouseVisitor) VisitUnaryExpression(ctx *UnaryExpressionContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitUnaryExpression(ctx *UnaryExpressionContext) any {
 	result := v.Visit(ctx.Primary()).(string)
 
 	// Check if this is a NOT expression
@@ -258,7 +256,7 @@ func (v *ClickHouseVisitor) VisitUnaryExpression(ctx *UnaryExpressionContext) an
 }
 
 // VisitPrimary handles grouped expressions, comparisons, function calls, and full-text search
-func (v *ClickHouseVisitor) VisitPrimary(ctx *PrimaryContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitPrimary(ctx *PrimaryContext) any {
 	if ctx.OrExpression() != nil {
 		// This is a parenthesized expression
 		return fmt.Sprintf("(%s)", v.Visit(ctx.OrExpression()).(string))
@@ -276,7 +274,11 @@ func (v *ClickHouseVisitor) VisitPrimary(ctx *PrimaryContext) any {
 		if keyCtx, ok := child.(*KeyContext); ok {
 			// create a full text search condition on the body field
 			keyText := keyCtx.GetText()
-			return fmt.Sprintf("lower(body) LIKE '%%%s%%' OR has(mapValues(attributes_string, '%%%s%%'))", strings.ToLower(keyText), keyText)
+			cond, err := v.conditionBuilder.GetCondition(context.Background(), v.fullTextColumn, types.FilterOperatorRegexp, keyText, v.builder)
+			if err != nil {
+				return ""
+			}
+			return cond
 		}
 	}
 
@@ -284,7 +286,7 @@ func (v *ClickHouseVisitor) VisitPrimary(ctx *PrimaryContext) any {
 }
 
 // VisitComparison handles all comparison operators
-func (v *ClickHouseVisitor) VisitComparison(ctx *ComparisonContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitComparison(ctx *ComparisonContext) any {
 	keys := v.Visit(ctx.Key()).([]types.TelemetryFieldKey)
 
 	// Handle EXISTS specially
@@ -401,17 +403,17 @@ func (v *ClickHouseVisitor) VisitComparison(ctx *ComparisonContext) any {
 }
 
 // VisitInClause handles IN expressions
-func (v *ClickHouseVisitor) VisitInClause(ctx *InClauseContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitInClause(ctx *InClauseContext) any {
 	return v.Visit(ctx.ValueList())
 }
 
 // VisitNotInClause handles NOT IN expressions
-func (v *ClickHouseVisitor) VisitNotInClause(ctx *NotInClauseContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitNotInClause(ctx *NotInClauseContext) any {
 	return v.Visit(ctx.ValueList())
 }
 
 // VisitValueList handles comma-separated value lists
-func (v *ClickHouseVisitor) VisitValueList(ctx *ValueListContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitValueList(ctx *ValueListContext) any {
 	values := ctx.AllValue()
 
 	parts := []any{}
@@ -423,14 +425,18 @@ func (v *ClickHouseVisitor) VisitValueList(ctx *ValueListContext) any {
 }
 
 // VisitFullText handles standalone quoted strings for full-text search
-func (v *ClickHouseVisitor) VisitFullText(ctx *FullTextContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitFullText(ctx *FullTextContext) any {
 	// remove quotes from the quotedText
 	quotedText := strings.Trim(ctx.QUOTED_TEXT().GetText(), "\"'")
-	return fmt.Sprintf("lower(body) LIKE '%%%s%%' OR has(mapValues(attributes_string, '%%%s%%'))", strings.ToLower(quotedText), quotedText)
+	cond, err := v.conditionBuilder.GetCondition(context.Background(), v.fullTextColumn, types.FilterOperatorRegexp, quotedText, v.builder)
+	if err != nil {
+		return ""
+	}
+	return cond
 }
 
 // VisitFunctionCall handles function calls like has(), hasAny(), etc.
-func (v *ClickHouseVisitor) VisitFunctionCall(ctx *FunctionCallContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitFunctionCall(ctx *FunctionCallContext) any {
 	// Get function name based on which token is present
 	var functionName string
 	if ctx.HAS() != nil {
@@ -464,7 +470,7 @@ func (v *ClickHouseVisitor) VisitFunctionCall(ctx *FunctionCallContext) any {
 }
 
 // VisitFunctionParamList handles the parameter list for function calls
-func (v *ClickHouseVisitor) VisitFunctionParamList(ctx *FunctionParamListContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitFunctionParamList(ctx *FunctionParamListContext) any {
 	params := ctx.AllFunctionParam()
 	if len(params) == 0 {
 		return ""
@@ -479,7 +485,7 @@ func (v *ClickHouseVisitor) VisitFunctionParamList(ctx *FunctionParamListContext
 }
 
 // VisitFunctionParam handles individual parameters in function calls
-func (v *ClickHouseVisitor) VisitFunctionParam(ctx *FunctionParamContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitFunctionParam(ctx *FunctionParamContext) any {
 	if ctx.Key() != nil {
 		return v.Visit(ctx.Key())
 	} else if ctx.Value() != nil {
@@ -492,18 +498,23 @@ func (v *ClickHouseVisitor) VisitFunctionParam(ctx *FunctionParamContext) any {
 }
 
 // VisitArray handles array literals
-func (v *ClickHouseVisitor) VisitArray(ctx *ArrayContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitArray(ctx *ArrayContext) any {
 	return v.Visit(ctx.ValueList())
 }
 
 // VisitValue handles literal values: strings, numbers, booleans
-func (v *ClickHouseVisitor) VisitValue(ctx *ValueContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitValue(ctx *ValueContext) any {
 	if ctx.QUOTED_TEXT() != nil {
 		txt := ctx.QUOTED_TEXT().GetText()
 		// trim quotes and return the value
 		return strings.Trim(txt, "\"'")
 	} else if ctx.NUMBER() != nil {
-		return ctx.NUMBER().GetText()
+		number, err := strconv.ParseFloat(ctx.NUMBER().GetText(), 64)
+		if err != nil {
+			v.errors = append(v.errors, fmt.Sprintf("failed to parse number %s", ctx.NUMBER().GetText()))
+			return ""
+		}
+		return number
 	} else if ctx.BOOL() != nil {
 		// Convert to ClickHouse boolean literal
 		boolText := strings.ToLower(ctx.BOOL().GetText())
@@ -516,7 +527,7 @@ func (v *ClickHouseVisitor) VisitValue(ctx *ValueContext) any {
 }
 
 // VisitKey handles field/column references
-func (v *ClickHouseVisitor) VisitKey(ctx *KeyContext) any {
+func (v *ClickHouseWhereClauseVisitor) VisitKey(ctx *KeyContext) any {
 
 	fieldKeySelector := getFieldSelectorFromKey(ctx.KEY().GetText())
 

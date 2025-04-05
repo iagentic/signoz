@@ -13,7 +13,7 @@ import (
 
 func TestGetColumn(t *testing.T) {
 	ctx := context.Background()
-	mapper := NewConditionBuilder()
+	conditionBuilder := NewConditionBuilder()
 
 	testCases := []struct {
 		name          string
@@ -156,7 +156,7 @@ func TestGetColumn(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			col, err := mapper.GetColumn(ctx, tc.key)
+			col, err := conditionBuilder.GetColumn(ctx, tc.key)
 
 			if tc.expectedError != nil {
 				assert.Equal(t, tc.expectedError, err)
@@ -170,7 +170,7 @@ func TestGetColumn(t *testing.T) {
 
 func TestGetFieldKeyName(t *testing.T) {
 	ctx := context.Background()
-	mapper := &conditionBuilder{}
+	conditionBuilder := &conditionBuilder{}
 
 	testCases := []struct {
 		name           string
@@ -239,7 +239,7 @@ func TestGetFieldKeyName(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := mapper.getFieldKeyName(ctx, tc.key)
+			result, err := conditionBuilder.getFieldKeyName(ctx, tc.key)
 
 			if tc.expectedError != nil {
 				assert.Equal(t, tc.expectedError, err)
@@ -253,7 +253,7 @@ func TestGetFieldKeyName(t *testing.T) {
 
 func TestGetCondition(t *testing.T) {
 	ctx := context.Background()
-	mapper := NewConditionBuilder()
+	conditionBuilder := NewConditionBuilder()
 
 	testCases := []struct {
 		name          string
@@ -527,7 +527,7 @@ func TestGetCondition(t *testing.T) {
 	for _, tc := range testCases {
 		sb := sqlbuilder.NewSelectBuilder()
 		t.Run(tc.name, func(t *testing.T) {
-			cond, err := mapper.GetCondition(ctx, tc.key, tc.operator, tc.value, sb)
+			cond, err := conditionBuilder.GetCondition(ctx, tc.key, tc.operator, tc.value, sb)
 			sb.Where(cond)
 
 			if tc.expectedError != nil {
@@ -541,22 +541,9 @@ func TestGetCondition(t *testing.T) {
 	}
 }
 
-// TestNewColumnMapper checks that the constructor properly returns an instance of the mapper
-func TestNewColumnMapper(t *testing.T) {
-	mapper := NewConditionBuilder()
-	assert.NotNil(t, mapper)
-	_, ok := mapper.(*conditionBuilder)
-	assert.True(t, ok, "NewColumnMapper should return an instance of *columnMapper")
-}
-
-// TestColumnMapperImplementsInterface ensures the columnMapper implements the KeyToColumnMapper interface
-func TestColumnMapperImplementsInterface(t *testing.T) {
-	var _ types.ConditionBuilder = &conditionBuilder{}
-}
-
 func TestGetConditionMultiple(t *testing.T) {
 	ctx := context.Background()
-	mapper := NewConditionBuilder()
+	conditionBuilder := NewConditionBuilder()
 
 	testCases := []struct {
 		name          string
@@ -590,7 +577,7 @@ func TestGetConditionMultiple(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var err error
 			for _, key := range tc.keys {
-				cond, err := mapper.GetCondition(ctx, key, tc.operator, tc.value, sb)
+				cond, err := conditionBuilder.GetCondition(ctx, key, tc.operator, tc.value, sb)
 				sb.Where(cond)
 				if err != nil {
 					t.Fatalf("Error getting condition for key %s: %v", key.Name, err)
