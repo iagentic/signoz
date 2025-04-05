@@ -1,11 +1,7 @@
 package parser
 
 import (
-	"fmt"
-	"strings"
 	"testing"
-
-	"github.com/antlr4-go/antlr/v4"
 )
 
 var queries = []string{
@@ -78,20 +74,5 @@ var queries = []string{
 }
 
 func TestLexer(t *testing.T) {
-	for idx, query := range queries {
-		input := antlr.NewInputStream(query)
-		lexer := NewFilterQueryLexer(input)
-		fmt.Println("query[", idx, "]", query)
-		lst := []string{}
-		// print all tokens
-		for {
-			tok := lexer.NextToken()
-			if tok.GetTokenType() == antlr.TokenEOF {
-				break
-			}
-			lst = append(lst, fmt.Sprintf("[%s: %s %d %d]", lexer.SymbolicNames[tok.GetTokenType()], tok.GetText(), tok.GetStart(), tok.GetStop()))
-		}
-		fmt.Println(strings.Join(lst, ","))
-		fmt.Println()
-	}
+
 }

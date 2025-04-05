@@ -277,7 +277,6 @@ func (t *telemetryMetaStore) getLogsKeys(ctx context.Context, fieldKeySelectors 
 		t.logsDBName,
 		t.logsFieldsTblName,
 	)
-	fmt.Println("query", query, args)
 
 	rows, err := t.telemetrystore.ClickhouseDB().Query(ctx, query, args...)
 	if err != nil {

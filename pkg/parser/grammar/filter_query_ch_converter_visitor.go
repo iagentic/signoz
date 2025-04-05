@@ -111,29 +111,10 @@ func getFieldSelectorFromKey(key string) types.FieldKeySelector {
 }
 
 // PrepareWhereClause generates a ClickHouse compatible WHERE clause from the filter query
-func PrepareWhereClause(query string, metadataStore types.Metadata, conditionBuilder types.ConditionBuilder) (string, error) {
+func PrepareWhereClause(query string, fieldKeys map[string][]types.TelemetryFieldKey, conditionBuilder types.ConditionBuilder) (string, error) {
 	// Setup the ANTLR parsing pipeline
 	input := antlr.NewInputStream(query)
 	lexer := NewFilterQueryLexer(input)
-
-	// create a lexer for keys enrichment
-	enrichmentInput := antlr.NewInputStream(query)
-	lexerForKeysEnrich := NewFilterQueryLexer(enrichmentInput)
-	fieldKeySelectors := []types.FieldKeySelector{}
-	for {
-		tok := lexerForKeysEnrich.NextToken()
-		if tok.GetTokenType() == antlr.TokenEOF {
-			break
-		}
-		if tok.GetTokenType() == FilterQueryLexerKEY {
-			fieldKeySelectors = append(fieldKeySelectors, getFieldSelectorFromKey(tok.GetText()))
-		}
-	}
-
-	fieldKeys, err := metadataStore.GetKeysMulti(context.Background(), fieldKeySelectors)
-	if err != nil {
-		return "", err
-	}
 
 	sb := sqlbuilder.NewSelectBuilder()
 
@@ -159,7 +140,6 @@ func PrepareWhereClause(query string, metadataStore types.Metadata, conditionBui
 
 	// Visit the parse tree with our ClickHouse visitor
 	whereClause := visitor.Visit(tree)
-	fmt.Println("whereClause", whereClause, visitor.args)
 
 	// Convert result to string, handling nil cases
 	if whereClause == nil {
@@ -178,58 +158,40 @@ func (v *ClickHouseVisitor) Visit(tree antlr.ParseTree) any {
 
 	switch t := tree.(type) {
 	case *QueryContext:
-		fmt.Println("QueryContext")
 		return v.VisitQuery(t)
 	case *ExpressionContext:
-		fmt.Println("ExpressionContext")
 		return v.VisitExpression(t)
 	case *OrExpressionContext:
-		fmt.Println("OrExpressionContext")
 		return v.VisitOrExpression(t)
 	case *AndExpressionContext:
-		fmt.Println("AndExpressionContext")
 		return v.VisitAndExpression(t)
 	case *UnaryExpressionContext:
-		fmt.Println("UnaryExpressionContext")
 		return v.VisitUnaryExpression(t)
 	case *PrimaryContext:
-		fmt.Println("PrimaryContext")
 		return v.VisitPrimary(t)
 	case *ComparisonContext:
-		fmt.Println("ComparisonContext")
 		return v.VisitComparison(t)
 	case *InClauseContext:
-		fmt.Println("InClauseContext")
 		return v.VisitInClause(t)
 	case *NotInClauseContext:
-		fmt.Println("NotInClauseContext")
 		return v.VisitNotInClause(t)
 	case *ValueListContext:
-		fmt.Println("ValueListContext")
 		return v.VisitValueList(t)
 	case *FullTextContext:
-		fmt.Println("FullTextContext")
 		return v.VisitFullText(t)
 	case *FunctionCallContext:
-		fmt.Println("FunctionCallContext")
 		return v.VisitFunctionCall(t)
 	case *FunctionParamListContext:
-		fmt.Println("FunctionParamListContext")
 		return v.VisitFunctionParamList(t)
 	case *FunctionParamContext:
-		fmt.Println("FunctionParamContext")
 		return v.VisitFunctionParam(t)
 	case *ArrayContext:
-		fmt.Println("ArrayContext")
 		return v.VisitArray(t)
 	case *ValueContext:
-		val := v.VisitValue(t)
-		return val
+		return v.VisitValue(t)
 	case *KeyContext:
-		fmt.Println("KeyContext")
 		return v.VisitKey(t)
 	default:
-		fmt.Println("default")
 		return ""
 	}
 }
@@ -308,7 +270,6 @@ func (v *ClickHouseVisitor) VisitPrimary(ctx *PrimaryContext) any {
 		return v.Visit(ctx.FullText())
 	}
 
-	fmt.Println("ctx.GetChildCount()", ctx.GetChildCount())
 	// Handle standalone key as a full text search term
 	if ctx.GetChildCount() == 1 {
 		child := ctx.GetChild(0)
@@ -325,8 +286,6 @@ func (v *ClickHouseVisitor) VisitPrimary(ctx *PrimaryContext) any {
 // VisitComparison handles all comparison operators
 func (v *ClickHouseVisitor) VisitComparison(ctx *ComparisonContext) any {
 	keys := v.Visit(ctx.Key()).([]types.TelemetryFieldKey)
-
-	fmt.Println("keys", keys)
 
 	// Handle EXISTS specially
 	if ctx.EXISTS() != nil {
@@ -391,7 +350,6 @@ func (v *ClickHouseVisitor) VisitComparison(ctx *ComparisonContext) any {
 
 	// Get all values for operations that need them
 	values := ctx.AllValue()
-	fmt.Println("values", values)
 	if len(values) > 0 {
 		value := v.Visit(values[0])
 
