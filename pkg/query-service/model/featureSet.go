@@ -9,7 +9,6 @@ type Feature struct {
 	Route      string `db:"route" json:"route"`
 }
 
-const SmartTraceDetail = "SMART_TRACE_DETAIL"
 const CustomMetricsFunction = "CUSTOM_METRICS_FUNCTION"
 const DisableUpsell = "DISABLE_UPSELL"
 const OSS = "OSS"
@@ -24,6 +23,7 @@ const AlertChannelOpsgenie = "ALERT_CHANNEL_OPSGENIE"
 const AlertChannelEmail = "ALERT_CHANNEL_EMAIL"
 const AnomalyDetection = "ANOMALY_DETECTION"
 const HostsInfraMonitoring = "HOSTS_INFRA_MONITORING"
+const TraceFunnels = "TRACE_FUNNELS"
 
 var BasicPlan = FeatureSet{
 	Feature{
@@ -35,13 +35,6 @@ var BasicPlan = FeatureSet{
 	},
 	Feature{
 		Name:       DisableUpsell,
-		Active:     false,
-		Usage:      0,
-		UsageLimit: -1,
-		Route:      "",
-	},
-	Feature{
-		Name:       SmartTraceDetail,
 		Active:     false,
 		Usage:      0,
 		UsageLimit: -1,
@@ -119,6 +112,13 @@ var BasicPlan = FeatureSet{
 	},
 	Feature{
 		Name:       AnomalyDetection,
+		Active:     false,
+		Usage:      0,
+		UsageLimit: -1,
+		Route:      "",
+	},
+	Feature{
+		Name:       TraceFunnels,
 		Active:     false,
 		Usage:      0,
 		UsageLimit: -1,

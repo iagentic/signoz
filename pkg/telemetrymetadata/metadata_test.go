@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	baseconst "github.com/SigNoz/signoz/pkg/query-service/constants"
 	"github.com/SigNoz/signoz/pkg/types"
@@ -16,7 +17,7 @@ type MockTelemetryStore struct {
 	conn driver.Conn
 }
 
-func (m *MockTelemetryStore) ClickHouseDB() driver.Conn {
+func (m *MockTelemetryStore) ClickhouseDB() clickhouse.Conn {
 	return m.conn
 }
 

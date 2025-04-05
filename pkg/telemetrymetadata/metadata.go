@@ -68,7 +68,7 @@ func NewTelemetryMetaStore(
 func (t *telemetryMetaStore) tracesTblStatementToFieldKeys(ctx context.Context) ([]types.TelemetryFieldKey, error) {
 	query := fmt.Sprintf("SHOW CREATE TABLE %s.%s", t.tracesDBName, t.indexV3TblName)
 	statements := []types.ShowCreateTableStatement{}
-	err := t.telemetrystore.ClickHouseDB().Select(ctx, &statements, query)
+	err := t.telemetrystore.ClickhouseDB().Select(ctx, &statements, query)
 	if err != nil {
 		return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetTblStatement.Error())
 	}
@@ -155,7 +155,7 @@ func (t *telemetryMetaStore) getTracesKeys(ctx context.Context, fieldKeySelector
 		t.tracesFieldsTblName,
 	)
 
-	rows, err := t.telemetrystore.ClickHouseDB().Query(ctx, query, args...)
+	rows, err := t.telemetrystore.ClickhouseDB().Query(ctx, query, args...)
 	if err != nil {
 		return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetTracesKeys.Error())
 	}
@@ -195,7 +195,7 @@ func (t *telemetryMetaStore) getTracesKeys(ctx context.Context, fieldKeySelector
 func (t *telemetryMetaStore) logsTblStatementToFieldKeys(ctx context.Context) ([]types.TelemetryFieldKey, error) {
 	query := fmt.Sprintf("SHOW CREATE TABLE %s.%s", t.logsDBName, t.logsV2TblName)
 	statements := []types.ShowCreateTableStatement{}
-	err := t.telemetrystore.ClickHouseDB().Select(ctx, &statements, query)
+	err := t.telemetrystore.ClickhouseDB().Select(ctx, &statements, query)
 	if err != nil {
 		return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetTblStatement.Error())
 	}
@@ -279,7 +279,7 @@ func (t *telemetryMetaStore) getLogsKeys(ctx context.Context, fieldKeySelectors 
 	)
 	fmt.Println("query", query, args)
 
-	rows, err := t.telemetrystore.ClickHouseDB().Query(ctx, query, args...)
+	rows, err := t.telemetrystore.ClickhouseDB().Query(ctx, query, args...)
 	if err != nil {
 		return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetLogsKeys.Error())
 	}
@@ -363,7 +363,7 @@ func (t *telemetryMetaStore) getMetricsKeys(ctx context.Context, fieldKeySelecto
 		LIMIT ?
 	`, t.metricsDBName, t.timeseries1WTblName)
 
-	rows, err := t.telemetrystore.ClickHouseDB().Query(ctx, query, args...)
+	rows, err := t.telemetrystore.ClickhouseDB().Query(ctx, query, args...)
 	if err != nil {
 		return nil, errors.Wrapf(err, errors.TypeInternal, errors.CodeInternal, ErrFailedToGetMetricsKeys.Error())
 	}
@@ -563,7 +563,7 @@ func (t *telemetryMetaStore) getRelatedValues(ctx context.Context, fieldKeySelec
 	)
 	zap.L().Debug("filterSubQuery for related values", zap.String("query", filterSubQuery), zap.Any("args", args))
 
-	rows, err := t.telemetrystore.ClickHouseDB().Query(ctx, filterSubQuery, args...)
+	rows, err := t.telemetrystore.ClickhouseDB().Query(ctx, filterSubQuery, args...)
 	if err != nil {
 		return nil, ErrFailedToGetRelatedValues
 	}
