@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
+	"github.com/huandu/go-sqlbuilder"
 )
 
 // Signal is the signal of the telemetry data.
@@ -99,7 +100,12 @@ const (
 )
 
 func (f FieldDataType) String() string {
-	return string(f)
+	switch f {
+	case FieldDataTypeNumber, FieldDataTypeInt64, FieldDataTypeFloat64:
+		return string(FieldDataTypeFloat64)
+	default:
+		return string(f)
+	}
 }
 
 func FieldDataTypeFromString(s string) FieldDataType {
@@ -188,6 +194,7 @@ type Metadata interface {
 	GetAllValues(ctx context.Context, fieldKeySelector FieldKeySelector) (any, error)
 }
 
-type KeyToColumnMapper interface {
-	GetColumn(ctx context.Context, key TelemetryFieldKey) (schema.Column, error)
+type ConditionBuilder interface {
+	GetColumn(ctx context.Context, key TelemetryFieldKey) (*schema.Column, error)
+	GetCondition(ctx context.Context, key TelemetryFieldKey, operator FilterOperator, value any, sb *sqlbuilder.SelectBuilder) (*sqlbuilder.SelectBuilder, error)
 }

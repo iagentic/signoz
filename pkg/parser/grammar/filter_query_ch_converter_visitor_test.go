@@ -25,7 +25,7 @@ func TestConvertToClickHouse(t *testing.T) {
 		`boghy>=nil`,
 	}
 	for idx, query := range queries {
-		chQuery, err := PrepareWhereClause(query, nil)
+		chQuery, err := PrepareWhereClause(query, nil, nil)
 		if err != nil {
 			t.Errorf("Error converting query to ClickHouse: %v", err)
 		}

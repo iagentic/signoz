@@ -125,6 +125,11 @@ func (t *telemetryMetaStore) getTracesKeys(ctx context.Context, fieldKeySelector
 		}
 		limit += fieldKeySelector.Limit
 	}
+
+	if limit == 0 {
+		limit = 1000
+	}
+
 	args = append(args, limit)
 
 	query := fmt.Sprintf(`
@@ -244,6 +249,9 @@ func (t *telemetryMetaStore) getLogsKeys(ctx context.Context, fieldKeySelectors 
 			whereClause += " OR "
 		}
 		limit += fieldKeySelector.Limit
+	}
+	if limit == 0 {
+		limit = 1000
 	}
 	args = append(args, limit)
 
@@ -439,6 +447,10 @@ func (t *telemetryMetaStore) GetKeysMulti(ctx context.Context, fieldKeySelectors
 		case types.SignalTraces:
 			tracesSelectors = append(tracesSelectors, fieldKeySelector)
 		case types.SignalMetrics:
+			metricsSelectors = append(metricsSelectors, fieldKeySelector)
+		case types.SignalUnspecified:
+			logsSelectors = append(logsSelectors, fieldKeySelector)
+			tracesSelectors = append(tracesSelectors, fieldKeySelector)
 			metricsSelectors = append(metricsSelectors, fieldKeySelector)
 		}
 	}

@@ -7,29 +7,28 @@ import (
 
 	"github.com/SigNoz/signoz/pkg/types"
 	"github.com/antlr4-go/antlr/v4"
+
+	sqlbuilder "github.com/huandu/go-sqlbuilder"
 )
 
 // ClickHouseVisitor implements the FilterQueryVisitor interface
 // to convert the parsed filter expressions into ClickHouse WHERE clauses
 type ClickHouseVisitor struct {
-	metadataStore types.Metadata
-	columnMapper  types.KeyToColumnMapper
-}
-
-type partialQuery struct {
-	paritalQuery string
-	args         []any
-	warnings     []string
-	errors       []string
+	conditionBuilder types.ConditionBuilder
+	warnings         []string
+	fieldKeys        map[string][]types.TelemetryFieldKey
+	args             []any
+	errors           []string
 }
 
 // NewClickHouseVisitor creates a new ClickHouseVisitor
 func NewClickHouseVisitor(
-	metadataStore types.Metadata,
-	columnMapper types.KeyToColumnMapper,
+	conditionBuilder types.ConditionBuilder,
+	fieldKeys map[string][]types.TelemetryFieldKey,
 ) *ClickHouseVisitor {
 	return &ClickHouseVisitor{
-		columnMapper: columnMapper,
+		conditionBuilder: conditionBuilder,
+		fieldKeys:        fieldKeys,
 	}
 }
 
@@ -48,12 +47,8 @@ func NewErrorListener() *ErrorListener {
 }
 
 // SyntaxError captures syntax errors during parsing
-func (l *ErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSymbol interface{}, line, column int, msg string, e antlr.RecognitionException) {
-	fmt.Println("SyntaxError", msg, "line", line, "column", column, "offendingSymbol", offendingSymbol, "e", e)
-	symbol := offendingSymbol.(*antlr.CommonToken)
-	fmt.Println("symbol", symbol.GetText(), "symbol.GetTokenType()", symbol.GetTokenType(), "start", symbol.GetStart(), "stop", symbol.GetStop())
-	error := fmt.Sprintf("line %d:%d %s", line, column, msg)
-	l.Errors = append(l.Errors, error)
+func (l *ErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSymbol any, line, column int, msg string, e antlr.RecognitionException) {
+	l.Errors = append(l.Errors, fmt.Sprintf("line %d:%d %s", line, column, msg))
 }
 
 func getFieldSelectorFromKey(key string) types.FieldKeySelector {
@@ -66,7 +61,7 @@ func getFieldSelectorFromKey(key string) types.FieldKeySelector {
 
 	if len(keyTextParts) > 1 {
 		explicitFieldContext = types.FieldContextFromString(keyTextParts[0])
-		if explicitFieldContext != types.FieldContextAll {
+		if explicitFieldContext != types.FieldContextUnspecified {
 			explicitFieldContextProvided = true
 		}
 	}
@@ -81,7 +76,7 @@ func getFieldSelectorFromKey(key string) types.FieldKeySelector {
 		lastPartParts := strings.Split(lastPart, ":")
 		if len(lastPartParts) > 1 {
 			explicitFieldDataType = types.FieldDataTypeFromString(lastPartParts[1])
-			if explicitFieldDataType != types.FieldDataTypeAll {
+			if explicitFieldDataType != types.FieldDataTypeUnspecified {
 				explicitFieldDataTypeProvided = true
 			}
 		}
@@ -100,25 +95,27 @@ func getFieldSelectorFromKey(key string) types.FieldKeySelector {
 	if explicitFieldContextProvided {
 		fieldKeySelector.FieldContext = explicitFieldContext
 	} else {
-		fieldKeySelector.FieldContext = types.FieldContextAll
+		fieldKeySelector.FieldContext = types.FieldContextUnspecified
 	}
 
 	if explicitFieldDataTypeProvided {
 		fieldKeySelector.FieldDataType = explicitFieldDataType
 	} else {
-		fieldKeySelector.FieldDataType = types.FieldDataTypeAll
+		fieldKeySelector.FieldDataType = types.FieldDataTypeUnspecified
 	}
 
 	return fieldKeySelector
 }
 
 // PrepareWhereClause generates a ClickHouse compatible WHERE clause from the filter query
-func PrepareWhereClause(query string, visitor *ClickHouseVisitor) (string, error) {
+func PrepareWhereClause(query string, metadataStore types.Metadata, conditionBuilder types.ConditionBuilder) (string, error) {
 	// Setup the ANTLR parsing pipeline
 	input := antlr.NewInputStream(query)
 	lexer := NewFilterQueryLexer(input)
 
-	lexerForKeysEnrich := NewFilterQueryLexer(input)
+	// create a lexer for keys enrichment
+	enrichmentInput := antlr.NewInputStream(query)
+	lexerForKeysEnrich := NewFilterQueryLexer(enrichmentInput)
 	fieldKeySelectors := []types.FieldKeySelector{}
 	for {
 		tok := lexerForKeysEnrich.NextToken()
@@ -130,10 +127,12 @@ func PrepareWhereClause(query string, visitor *ClickHouseVisitor) (string, error
 		}
 	}
 
-	fieldKeys, err := visitor.metadataStore.GetKeysMulti(context.Background(), fieldKeySelectors)
+	fieldKeys, err := metadataStore.GetKeysMulti(context.Background(), fieldKeySelectors)
 	if err != nil {
-		return "", fmt.Errorf("error getting field keys: %s", err)
+		return "", err
 	}
+
+	visitor := NewClickHouseVisitor(conditionBuilder, fieldKeys)
 
 	// Set up error handling
 	errorListener := NewErrorListener()
@@ -154,7 +153,7 @@ func PrepareWhereClause(query string, visitor *ClickHouseVisitor) (string, error
 	}
 
 	// Visit the parse tree with our ClickHouse visitor
-	whereClause := visitor.Visit(tree, fieldKeys)
+	whereClause := visitor.Visit(tree)
 
 	// Convert result to string, handling nil cases
 	if whereClause == nil {
@@ -165,7 +164,7 @@ func PrepareWhereClause(query string, visitor *ClickHouseVisitor) (string, error
 }
 
 // Visit dispatches to the specific visit method based on node type
-func (v *ClickHouseVisitor) Visit(tree antlr.ParseTree, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
+func (v *ClickHouseVisitor) Visit(tree antlr.ParseTree) any {
 	// Handle nil nodes to prevent panic
 	if tree == nil {
 		return ""
@@ -174,55 +173,55 @@ func (v *ClickHouseVisitor) Visit(tree antlr.ParseTree, fieldKeys map[string][]t
 	switch t := tree.(type) {
 	case *QueryContext:
 		fmt.Println("QueryContext")
-		return v.VisitQuery(t, fieldKeys)
+		return v.VisitQuery(t)
 	case *ExpressionContext:
 		fmt.Println("ExpressionContext")
-		return v.VisitExpression(t, fieldKeys)
+		return v.VisitExpression(t)
 	case *OrExpressionContext:
 		fmt.Println("OrExpressionContext")
-		return v.VisitOrExpression(t, fieldKeys)
+		return v.VisitOrExpression(t)
 	case *AndExpressionContext:
 		fmt.Println("AndExpressionContext")
-		return v.VisitAndExpression(t, fieldKeys)
+		return v.VisitAndExpression(t)
 	case *UnaryExpressionContext:
 		fmt.Println("UnaryExpressionContext")
-		return v.VisitUnaryExpression(t, fieldKeys)
+		return v.VisitUnaryExpression(t)
 	case *PrimaryContext:
 		fmt.Println("PrimaryContext")
-		return v.VisitPrimary(t, fieldKeys)
+		return v.VisitPrimary(t)
 	case *ComparisonContext:
 		fmt.Println("ComparisonContext")
-		return v.VisitComparison(t, fieldKeys)
+		return v.VisitComparison(t)
 	case *InClauseContext:
 		fmt.Println("InClauseContext")
-		return v.VisitInClause(t, fieldKeys)
+		return v.VisitInClause(t)
 	case *NotInClauseContext:
 		fmt.Println("NotInClauseContext")
-		return v.VisitNotInClause(t, fieldKeys)
+		return v.VisitNotInClause(t)
 	case *ValueListContext:
 		fmt.Println("ValueListContext")
-		return v.VisitValueList(t, fieldKeys)
+		return v.VisitValueList(t)
 	case *FullTextContext:
 		fmt.Println("FullTextContext")
-		return v.VisitFullText(t, fieldKeys)
+		return v.VisitFullText(t)
 	case *FunctionCallContext:
 		fmt.Println("FunctionCallContext")
-		return v.VisitFunctionCall(t, fieldKeys)
+		return v.VisitFunctionCall(t)
 	case *FunctionParamListContext:
 		fmt.Println("FunctionParamListContext")
-		return v.VisitFunctionParamList(t, fieldKeys)
+		return v.VisitFunctionParamList(t)
 	case *FunctionParamContext:
 		fmt.Println("FunctionParamContext")
-		return v.VisitFunctionParam(t, fieldKeys)
+		return v.VisitFunctionParam(t)
 	case *ArrayContext:
 		fmt.Println("ArrayContext")
-		return v.VisitArray(t, fieldKeys)
+		return v.VisitArray(t)
 	case *ValueContext:
-		val := v.VisitValue(t, fieldKeys)
+		val := v.VisitValue(t)
 		return val
 	case *KeyContext:
 		fmt.Println("KeyContext")
-		return v.VisitKey(t, fieldKeys)
+		return v.VisitKey(t)
 	default:
 		fmt.Println("default")
 		return ""
@@ -230,14 +229,14 @@ func (v *ClickHouseVisitor) Visit(tree antlr.ParseTree, fieldKeys map[string][]t
 }
 
 // VisitQuery handles the root query node
-func (v *ClickHouseVisitor) VisitQuery(ctx *QueryContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
+func (v *ClickHouseVisitor) VisitQuery(ctx *QueryContext) any {
 	expressions := ctx.AllExpression()
 	if len(expressions) == 0 {
 		return ""
 	}
 
 	// Visit the first expression
-	result := v.Visit(expressions[0], fieldKeys).(string)
+	result := v.Visit(expressions[0]).(string)
 
 	// Process any additional expressions (with implicit/explicit AND/OR)
 	for i := 1; i < len(expressions); i++ {
@@ -255,7 +254,7 @@ func (v *ClickHouseVisitor) VisitQuery(ctx *QueryContext, fieldKeys map[string][
 			op = " AND "
 		}
 
-		exprResult := v.Visit(expressions[i], fieldKeys).(string)
+		exprResult := v.Visit(expressions[i]).(string)
 		result = fmt.Sprintf("(%s)%s(%s)", result, op, exprResult)
 	}
 
@@ -263,43 +262,43 @@ func (v *ClickHouseVisitor) VisitQuery(ctx *QueryContext, fieldKeys map[string][
 }
 
 // VisitExpression passes through to the orExpression
-func (v *ClickHouseVisitor) VisitExpression(ctx *ExpressionContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
-	return v.Visit(ctx.OrExpression(), fieldKeys)
+func (v *ClickHouseVisitor) VisitExpression(ctx *ExpressionContext) any {
+	return v.Visit(ctx.OrExpression())
 }
 
 // VisitOrExpression handles OR expressions
-func (v *ClickHouseVisitor) VisitOrExpression(ctx *OrExpressionContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
+func (v *ClickHouseVisitor) VisitOrExpression(ctx *OrExpressionContext) any {
 	andExpressions := ctx.AllAndExpression()
 	if len(andExpressions) == 1 {
-		return v.Visit(andExpressions[0], fieldKeys)
+		return v.Visit(andExpressions[0])
 	}
 
 	parts := make([]string, len(andExpressions))
 	for i, expr := range andExpressions {
-		parts[i] = v.Visit(expr, fieldKeys).(string)
+		parts[i] = v.Visit(expr).(string)
 	}
 
 	return strings.Join(parts, " OR ")
 }
 
 // VisitAndExpression handles AND expressions
-func (v *ClickHouseVisitor) VisitAndExpression(ctx *AndExpressionContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
+func (v *ClickHouseVisitor) VisitAndExpression(ctx *AndExpressionContext) any {
 	unaryExpressions := ctx.AllUnaryExpression()
 	if len(unaryExpressions) == 1 {
-		return v.Visit(unaryExpressions[0], fieldKeys)
+		return v.Visit(unaryExpressions[0])
 	}
 
 	parts := make([]string, len(unaryExpressions))
 	for i, expr := range unaryExpressions {
-		parts[i] = v.Visit(expr, fieldKeys).(string)
+		parts[i] = v.Visit(expr).(string)
 	}
 
 	return strings.Join(parts, " AND ")
 }
 
 // VisitUnaryExpression handles NOT expressions
-func (v *ClickHouseVisitor) VisitUnaryExpression(ctx *UnaryExpressionContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
-	result := v.Visit(ctx.Primary(), fieldKeys).(string)
+func (v *ClickHouseVisitor) VisitUnaryExpression(ctx *UnaryExpressionContext) any {
+	result := v.Visit(ctx.Primary()).(string)
 
 	// Check if this is a NOT expression
 	if ctx.NOT() != nil {
@@ -310,16 +309,16 @@ func (v *ClickHouseVisitor) VisitUnaryExpression(ctx *UnaryExpressionContext, fi
 }
 
 // VisitPrimary handles grouped expressions, comparisons, function calls, and full-text search
-func (v *ClickHouseVisitor) VisitPrimary(ctx *PrimaryContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
+func (v *ClickHouseVisitor) VisitPrimary(ctx *PrimaryContext) any {
 	if ctx.OrExpression() != nil {
 		// This is a parenthesized expression
-		return fmt.Sprintf("(%s)", v.Visit(ctx.OrExpression(), fieldKeys).(string))
+		return fmt.Sprintf("(%s)", v.Visit(ctx.OrExpression()).(string))
 	} else if ctx.Comparison() != nil {
-		return v.Visit(ctx.Comparison(), fieldKeys)
+		return v.Visit(ctx.Comparison())
 	} else if ctx.FunctionCall() != nil {
-		return v.Visit(ctx.FunctionCall(), fieldKeys)
+		return v.Visit(ctx.FunctionCall())
 	} else if ctx.FullText() != nil {
-		return v.Visit(ctx.FullText(), fieldKeys)
+		return v.Visit(ctx.FullText())
 	}
 
 	fmt.Println("ctx.GetChildCount()", ctx.GetChildCount())
@@ -337,134 +336,179 @@ func (v *ClickHouseVisitor) VisitPrimary(ctx *PrimaryContext, fieldKeys map[stri
 }
 
 // VisitComparison handles all comparison operators
-func (v *ClickHouseVisitor) VisitComparison(ctx *ComparisonContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
-	keyName := v.Visit(ctx.Key(), fieldKeys).(string)
+func (v *ClickHouseVisitor) VisitComparison(ctx *ComparisonContext) any {
+	keys := v.Visit(ctx.Key()).([]types.TelemetryFieldKey)
+
+	fmt.Println("keys", keys)
 
 	// Handle EXISTS specially
 	if ctx.EXISTS() != nil {
+		op := types.FilterOperatorExists
 		if ctx.NOT() != nil {
-			return partialQuery{
-				paritalQuery: fmt.Sprintf("not has(%s)", keyName),
-				args:         []any{},
+			op = types.FilterOperatorNotExists
+		}
+		var conds []string
+		var err error
+		for _, key := range keys {
+			sb := sqlbuilder.NewSelectBuilder()
+			sb, err = v.conditionBuilder.GetCondition(context.Background(), key, op, nil, sb)
+			if err != nil {
+				return ""
 			}
+			sql, args := sb.BuildWithFlavor(sqlbuilder.ClickHouse)
+			conds = append(conds, sql)
+			v.args = append(v.args, args...)
 		}
-		return partialQuery{
-			paritalQuery: fmt.Sprintf("has(%s)", keyName),
-			args:         []any{},
-		}
+		sql := sqlbuilder.NewSelectBuilder().Or(conds...)
+		return sql
 	}
 
 	// Handle IN clause
-	if ctx.InClause() != nil {
-		parts := v.Visit(ctx.InClause(), fieldKeys).([]any)
-		partsQuery := ""
-
-		for idx := range parts {
-			partsQuery += "?"
-			if idx < len(parts)-1 {
-				partsQuery += ","
-			}
+	if ctx.InClause() != nil || ctx.NotInClause() != nil {
+		values := v.Visit(ctx.InClause()).([]any)
+		op := types.FilterOperatorIn
+		if ctx.NotInClause() != nil {
+			op = types.FilterOperatorNotIn
 		}
-		return fmt.Sprintf("%s IN (%s)", keyName, partsQuery)
+		var conds []string
+		var err error
+		for _, key := range keys {
+			sb := sqlbuilder.NewSelectBuilder()
+			sb, err = v.conditionBuilder.GetCondition(context.Background(), key, op, values, sb)
+			if err != nil {
+				return ""
+			}
+			sql, args := sb.BuildWithFlavor(sqlbuilder.ClickHouse)
+			conds = append(conds, sql)
+			v.args = append(v.args, args...)
+		}
+		sql := sqlbuilder.NewSelectBuilder().Or(conds...)
+		return sql
 	}
 
-	// Handle NOT IN clause
-	if ctx.NotInClause() != nil {
-		notInClause := v.Visit(ctx.NotInClause(), fieldKeys).(string)
-		return fmt.Sprintf("%s %s", keyName, notInClause)
+	// Handle BETWEEN
+	if ctx.BETWEEN() != nil {
+		op := types.FilterOperatorBetween
+		if ctx.NOT() != nil {
+			op = types.FilterOperatorNotBetween
+		}
+
+		values := ctx.AllValue()
+		if len(values) != 2 {
+			return ""
+		}
+
+		value1 := v.Visit(values[0])
+		value2 := v.Visit(values[1])
+
+		var conds []string
+		var err error
+		for _, key := range keys {
+			sb := sqlbuilder.NewSelectBuilder()
+			sb, err = v.conditionBuilder.GetCondition(context.Background(), key, op, []any{value1, value2}, sb)
+			if err != nil {
+				return ""
+			}
+			sql, args := sb.BuildWithFlavor(sqlbuilder.ClickHouse)
+			conds = append(conds, sql)
+			v.args = append(v.args, args...)
+		}
+		sql := sqlbuilder.NewSelectBuilder().Or(conds...)
+		return sql
 	}
 
 	// Get all values for operations that need them
 	values := ctx.AllValue()
+	fmt.Println("values", values)
 	if len(values) > 0 {
-		value := v.Visit(values[0], fieldKeys).(string)
+		value := v.Visit(values[0])
+
+		var op types.FilterOperator
 
 		// Handle each type of comparison
 		if ctx.EQUALS() != nil {
-			return fmt.Sprintf("%s = %s", keyName, value)
+			op = types.FilterOperatorEqual
 		} else if ctx.NOT_EQUALS() != nil || ctx.NEQ() != nil {
-			return fmt.Sprintf("%s != %s", keyName, value)
+			op = types.FilterOperatorNotEqual
 		} else if ctx.LT() != nil {
-			return fmt.Sprintf("%s < %s", keyName, value)
+			op = types.FilterOperatorLessThan
 		} else if ctx.LE() != nil {
-			return fmt.Sprintf("%s <= %s", keyName, value)
+			op = types.FilterOperatorLessThan
 		} else if ctx.GT() != nil {
-			return fmt.Sprintf("%s > %s", keyName, value)
+			op = types.FilterOperatorGreaterThan
 		} else if ctx.GE() != nil {
-			return fmt.Sprintf("%s >= %s", keyName, value)
+			op = types.FilterOperatorGreaterThan
 		} else if ctx.LIKE() != nil {
-			// Convert SQL LIKE to ClickHouse LIKE
-			return fmt.Sprintf("%s LIKE %s", keyName, value)
+			op = types.FilterOperatorLike
 		} else if ctx.ILIKE() != nil {
-			// ClickHouse has ilike
-			return fmt.Sprintf("%s ILIKE %s", keyName, value)
+			op = types.FilterOperatorLike
 		} else if ctx.NOT_LIKE() != nil {
-			return fmt.Sprintf("%s NOT LIKE %s", keyName, value)
+			op = types.FilterOperatorNotLike
 		} else if ctx.NOT_ILIKE() != nil {
-			return fmt.Sprintf("%s NOT ILIKE %s", keyName, value)
+			op = types.FilterOperatorNotLike
 		} else if ctx.REGEXP() != nil {
-			// ClickHouse uses match for regex
-			return fmt.Sprintf("match(%s, %s)", keyName, value)
+			op = types.FilterOperatorRegexp
 		} else if ctx.NOT() != nil && ctx.REGEXP() != nil {
-			return fmt.Sprintf("not match(%s, %s)", keyName, value)
+			op = types.FilterOperatorNotRegexp
 		} else if ctx.CONTAINS() != nil {
-			// In ClickHouse, we can use position or like
-			return fmt.Sprintf("position(%s, %s) > 0", keyName, value)
+			op = types.FilterOperatorContains
 		} else if ctx.NOT() != nil && ctx.CONTAINS() != nil {
-			return fmt.Sprintf("position(%s, %s) = 0", keyName, value)
+			op = types.FilterOperatorNotContains
 		}
-	}
 
-	// Handle BETWEEN
-	if ctx.BETWEEN() != nil && len(values) >= 2 {
-		value1 := v.Visit(values[0], fieldKeys).(string)
-		value2 := v.Visit(values[1], fieldKeys).(string)
-
-		if ctx.NOT() != nil {
-			return fmt.Sprintf("(%s < %s OR %s > %s)", keyName, value1, keyName, value2)
+		var conds []string
+		var err error
+		for _, key := range keys {
+			fmt.Println("key", key)
+			sb := sqlbuilder.NewSelectBuilder()
+			sb, err = v.conditionBuilder.GetCondition(context.Background(), key, op, value, sb)
+			if err != nil {
+				return ""
+			}
+			sql, args := sb.BuildWithFlavor(sqlbuilder.ClickHouse)
+			conds = append(conds, sql)
+			v.args = append(v.args, args...)
+			fmt.Println("sql", sql, "args", args)
 		}
-		return fmt.Sprintf("%s BETWEEN %s AND %s", keyName, value1, value2)
+		sql := sqlbuilder.NewSelectBuilder().Or(conds...)
+		fmt.Println("sql", sql)
+		return sql
 	}
 
 	return "" // Should not happen with valid input
 }
 
 // VisitInClause handles IN expressions
-func (v *ClickHouseVisitor) VisitInClause(ctx *InClauseContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
-	values := v.Visit(ctx.ValueList(), fieldKeys).(string)
-	return fmt.Sprintf("IN (%s)", values)
+func (v *ClickHouseVisitor) VisitInClause(ctx *InClauseContext) any {
+	return v.Visit(ctx.ValueList())
 }
 
 // VisitNotInClause handles NOT IN expressions
-func (v *ClickHouseVisitor) VisitNotInClause(ctx *NotInClauseContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
-	values := v.Visit(ctx.ValueList(), fieldKeys).(string)
-	return fmt.Sprintf("NOT IN (%s)", values)
+func (v *ClickHouseVisitor) VisitNotInClause(ctx *NotInClauseContext) any {
+	return v.Visit(ctx.ValueList())
 }
 
 // VisitValueList handles comma-separated value lists
-func (v *ClickHouseVisitor) VisitValueList(ctx *ValueListContext, fieldKeys map[string][]types.TelemetryFieldKey) any {
+func (v *ClickHouseVisitor) VisitValueList(ctx *ValueListContext) any {
 	values := ctx.AllValue()
-	if len(values) == 0 {
-		return ""
-	}
 
 	parts := []any{}
 	for _, val := range values {
-		parts = append(parts, v.Visit(val, fieldKeys))
+		parts = append(parts, v.Visit(val))
 	}
 
 	return parts
 }
 
 // VisitFullText handles standalone quoted strings for full-text search
-func (v *ClickHouseVisitor) VisitFullText(ctx *FullTextContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
+func (v *ClickHouseVisitor) VisitFullText(ctx *FullTextContext) any {
 	// remove quotes from the quotedText
 	quotedText := strings.Trim(ctx.QUOTED_TEXT().GetText(), "\"'")
 	return fmt.Sprintf("lower(body) LIKE '%%%s%%' OR has(mapValues(attributes_string, '%%%s%%'))", strings.ToLower(quotedText), quotedText)
 }
 
 // VisitFunctionCall handles function calls like has(), hasAny(), etc.
-func (v *ClickHouseVisitor) VisitFunctionCall(ctx *FunctionCallContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
+func (v *ClickHouseVisitor) VisitFunctionCall(ctx *FunctionCallContext) any {
 	// Get function name based on which token is present
 	var functionName string
 	if ctx.HAS() != nil {
@@ -479,7 +523,7 @@ func (v *ClickHouseVisitor) VisitFunctionCall(ctx *FunctionCallContext, fieldKey
 		// Default fallback
 		functionName = "unknown_function"
 	}
-	params := v.Visit(ctx.FunctionParamList(), fieldKeys).(string)
+	params := v.Visit(ctx.FunctionParamList()).(string)
 
 	// Map our functions to ClickHouse equivalents
 	switch functionName {
@@ -498,43 +542,43 @@ func (v *ClickHouseVisitor) VisitFunctionCall(ctx *FunctionCallContext, fieldKey
 }
 
 // VisitFunctionParamList handles the parameter list for function calls
-func (v *ClickHouseVisitor) VisitFunctionParamList(ctx *FunctionParamListContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
+func (v *ClickHouseVisitor) VisitFunctionParamList(ctx *FunctionParamListContext) any {
 	params := ctx.AllFunctionParam()
 	if len(params) == 0 {
 		return ""
 	}
 
-	parts := make([]string, len(params))
+	parts := make([]any, len(params))
 	for i, param := range params {
-		parts[i] = v.Visit(param, fieldKeys).(string)
+		parts[i] = v.Visit(param)
 	}
 
-	return strings.Join(parts, ", ")
+	return parts
 }
 
 // VisitFunctionParam handles individual parameters in function calls
-func (v *ClickHouseVisitor) VisitFunctionParam(ctx *FunctionParamContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
+func (v *ClickHouseVisitor) VisitFunctionParam(ctx *FunctionParamContext) any {
 	if ctx.Key() != nil {
-		return v.Visit(ctx.Key(), fieldKeys)
+		return v.Visit(ctx.Key())
 	} else if ctx.Value() != nil {
-		return v.Visit(ctx.Value(), fieldKeys)
+		return v.Visit(ctx.Value())
 	} else if ctx.Array() != nil {
-		return v.Visit(ctx.Array(), fieldKeys)
+		return v.Visit(ctx.Array())
 	}
 
 	return "" // Should not happen with valid input
 }
 
 // VisitArray handles array literals
-func (v *ClickHouseVisitor) VisitArray(ctx *ArrayContext, fieldKeys map[string][]types.TelemetryFieldKey) interface{} {
-	values := v.Visit(ctx.ValueList(), fieldKeys).(string)
-	return fmt.Sprintf("[%s]", values)
+func (v *ClickHouseVisitor) VisitArray(ctx *ArrayContext) any {
+	return v.Visit(ctx.ValueList())
 }
 
 // VisitValue handles literal values: strings, numbers, booleans
-func (v *ClickHouseVisitor) VisitValue(ctx *ValueContext, fieldKeys map[string][]types.TelemetryFieldKey) any {
+func (v *ClickHouseVisitor) VisitValue(ctx *ValueContext) any {
 	if ctx.QUOTED_TEXT() != nil {
 		txt := ctx.QUOTED_TEXT().GetText()
+		// trim quotes and return the value
 		return strings.Trim(txt, "\"'")
 	} else if ctx.NUMBER() != nil {
 		return ctx.NUMBER().GetText()
@@ -550,20 +594,20 @@ func (v *ClickHouseVisitor) VisitValue(ctx *ValueContext, fieldKeys map[string][
 }
 
 // VisitKey handles field/column references
-func (v *ClickHouseVisitor) VisitKey(ctx *KeyContext, fieldKeys map[string][]types.TelemetryFieldKey) any {
+func (v *ClickHouseVisitor) VisitKey(ctx *KeyContext) any {
 
 	fieldKeySelector := getFieldSelectorFromKey(ctx.KEY().GetText())
 
-	fieldKeysForName := fieldKeys[fieldKeySelector.Name]
+	fieldKeysForName := v.fieldKeys[fieldKeySelector.Name]
 
 	if len(fieldKeysForName) == 0 {
-		return fmt.Errorf("Key %s not found", fieldKeySelector.Name)
+		v.errors = append(v.errors, fmt.Sprintf("Key %s not found", fieldKeySelector.Name))
 	}
 
 	if len(fieldKeysForName) > 1 {
-		// this is error state, we must have a unambiguous key
-		return fmt.Errorf("Key %s is ambiguous, found %d different combinations of field context and data type", fieldKeySelector.Name, len(fieldKeysForName))
+		// this is warning state, we must have a unambiguous key
+		v.warnings = append(v.warnings, fmt.Sprintf("Key %s is ambiguous, found %d different combinations of field context and data type", fieldKeySelector.Name, len(fieldKeysForName)))
 	}
 
-	return fieldKeysForName[0]
+	return fieldKeysForName
 }

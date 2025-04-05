@@ -22,9 +22,11 @@ import (
 	"github.com/SigNoz/signoz/ee/query-service/rules"
 	"github.com/SigNoz/signoz/pkg/alertmanager"
 	"github.com/SigNoz/signoz/pkg/http/middleware"
+	parser "github.com/SigNoz/signoz/pkg/parser/grammar"
 	"github.com/SigNoz/signoz/pkg/query-service/auth"
 	"github.com/SigNoz/signoz/pkg/signoz"
 	"github.com/SigNoz/signoz/pkg/sqlstore"
+	"github.com/SigNoz/signoz/pkg/telemetrylogs"
 	"github.com/SigNoz/signoz/pkg/telemetrymetadata"
 	"github.com/SigNoz/signoz/pkg/types"
 	"github.com/SigNoz/signoz/pkg/types/authtypes"
@@ -191,6 +193,7 @@ func NewServer(serverOptions *ServerOptions) (*Server, error) {
 			FieldContext:  types.FieldContextSpan,
 			FieldDataType: types.FieldDataTypeString,
 			Name:          "htt",
+			Limit:         10,
 		},
 		{
 			FieldContext:  types.FieldContextSpan,
@@ -218,6 +221,9 @@ func NewServer(serverOptions *ServerOptions) (*Server, error) {
 		},
 	})
 	fmt.Println("relatedValues", relatedValues, err)
+
+	chQuery, err := parser.PrepareWhereClause(`service.name="demo-app" AND k8s.statefulset.name="demo-app"`, metastore, telemetrylogs.NewConditionBuilder())
+	fmt.Println("chQuery", chQuery, err)
 
 	var reader interfaces.DataConnector
 	qb := db.NewDataConnector(

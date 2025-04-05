@@ -3,13 +3,16 @@ package telemetrylogs
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
 	"github.com/SigNoz/signoz/pkg/types"
+	"github.com/huandu/go-sqlbuilder"
 )
 
 var (
-	mainColumns = map[string]schema.Column{
+	mainColumns = map[string]*schema.Column{
 		"ts_bucket_start":      {Name: "ts_bucket_start", Type: schema.ColumnTypeUInt64},
 		"resource_fingerprint": {Name: "resource_fingerprint", Type: schema.ColumnTypeString},
 
@@ -47,25 +50,29 @@ var (
 	}
 
 	ErrColumnNotFound = errors.New("column not found")
+	ErrBetweenValues  = errors.New("(not) between operator requires two values")
+	ErrInValues       = errors.New("(not) in operator requires a list of values")
 )
 
-type columnMapper struct {
+var _ types.ConditionBuilder = &conditionBuilder{}
+
+type conditionBuilder struct {
 }
 
-func NewColumnMapper() types.KeyToColumnMapper {
-	return &columnMapper{}
+func NewConditionBuilder() types.ConditionBuilder {
+	return &conditionBuilder{}
 }
 
-func (c *columnMapper) GetColumn(ctx context.Context, key types.TelemetryFieldKey) (schema.Column, error) {
+func (c *conditionBuilder) GetColumn(ctx context.Context, key types.TelemetryFieldKey) (*schema.Column, error) {
 
 	switch key.FieldContext {
 	case types.FieldContextResource:
 		return mainColumns["resources_string"], nil
 	case types.FieldContextScope:
 		switch key.Name {
-		case "name", "scope.name":
+		case "name", "scope.name", "scope_name":
 			return mainColumns["scope_name"], nil
-		case "version", "scope.version":
+		case "version", "scope.version", "scope_version":
 			return mainColumns["scope_version"], nil
 		}
 		return mainColumns["scope_string"], nil
@@ -81,10 +88,180 @@ func (c *columnMapper) GetColumn(ctx context.Context, key types.TelemetryFieldKe
 	case types.FieldContextLog:
 		col, ok := mainColumns[key.Name]
 		if !ok {
-			return schema.Column{}, ErrColumnNotFound
+			return nil, ErrColumnNotFound
 		}
 		return col, nil
 	}
 
-	return schema.Column{}, ErrColumnNotFound
+	return nil, ErrColumnNotFound
+}
+
+func keyToMaterializedColumnName(key types.TelemetryFieldKey) string {
+	return fmt.Sprintf("%s_%s_%s", key.FieldContext, key.FieldDataType.String(), strings.ReplaceAll(key.Name, ".", "$$"))
+}
+
+func (c *conditionBuilder) getFieldKeyName(ctx context.Context, key types.TelemetryFieldKey) (string, error) {
+	column, err := c.GetColumn(ctx, key)
+	if err != nil {
+		return "", err
+	}
+
+	switch column.Type {
+	case schema.ColumnTypeString,
+		schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
+		schema.ColumnTypeUInt64,
+		schema.ColumnTypeUInt32,
+		schema.ColumnTypeUInt8:
+		return column.Name, nil
+	case schema.MapColumnType{
+		KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
+		ValueType: schema.ColumnTypeString,
+	}:
+		// a key could have been materialized, if so return the materialized column name
+		if key.Materialized {
+			return keyToMaterializedColumnName(key), nil
+		}
+		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
+	case schema.MapColumnType{
+		KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
+		ValueType: schema.ColumnTypeInt64,
+	}:
+		// a key could have been materialized, if so return the materialized column name
+		if key.Materialized {
+			return keyToMaterializedColumnName(key), nil
+		}
+		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
+	case schema.MapColumnType{
+		KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
+		ValueType: schema.ColumnTypeUInt8,
+	}:
+		// a key could have been materialized, if so return the materialized column name
+		if key.Materialized {
+			return keyToMaterializedColumnName(key), nil
+		}
+		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
+	}
+	// should not reach here
+	return column.Name, nil
+}
+
+func (c *conditionBuilder) GetCondition(
+	ctx context.Context,
+	key types.TelemetryFieldKey,
+	operator types.FilterOperator,
+	value any,
+	sb *sqlbuilder.SelectBuilder,
+) (*sqlbuilder.SelectBuilder, error) {
+	column, err := c.GetColumn(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	fieldKeyName, err := c.getFieldKeyName(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	// regular operators
+	switch operator {
+	// regular operators
+	case types.FilterOperatorEqual:
+		sb.Where(sb.E(fieldKeyName, value))
+	case types.FilterOperatorNotEqual:
+		sb.Where(sb.NE(fieldKeyName, value))
+	case types.FilterOperatorGreaterThan:
+		sb.Where(sb.G(fieldKeyName, value))
+	case types.FilterOperatorGreaterThanOrEq:
+		sb.Where(sb.GE(fieldKeyName, value))
+	case types.FilterOperatorLessThan:
+		sb.Where(sb.LT(fieldKeyName, value))
+	case types.FilterOperatorLessThanOrEq:
+		sb.Where(sb.LE(fieldKeyName, value))
+
+	// like and not like
+	case types.FilterOperatorLike:
+		sb.Where(sb.Like(fieldKeyName, value))
+	case types.FilterOperatorNotLike:
+		sb.Where(sb.NotLike(fieldKeyName, value))
+	case types.FilterOperatorILike:
+		sb.Where(sb.ILike(fieldKeyName, value))
+	case types.FilterOperatorNotILike:
+		sb.Where(sb.NotILike(fieldKeyName, value))
+
+	// between and not between
+	case types.FilterOperatorBetween:
+		values, ok := value.([]any)
+		if !ok {
+			return nil, ErrBetweenValues
+		}
+		if len(values) != 2 {
+			return nil, ErrBetweenValues
+		}
+		sb.Where(sb.Between(fieldKeyName, values[0], values[1]))
+	case types.FilterOperatorNotBetween:
+		values, ok := value.([]any)
+		if !ok {
+			return nil, ErrBetweenValues
+		}
+		if len(values) != 2 {
+			return nil, ErrBetweenValues
+		}
+		sb.Where(sb.NotBetween(fieldKeyName, values[0], values[1]))
+
+	// in and not in
+	case types.FilterOperatorIn:
+		values, ok := value.([]any)
+		if !ok {
+			return nil, ErrInValues
+		}
+		sb.Where(sb.In(fieldKeyName, values...))
+	case types.FilterOperatorNotIn:
+		values, ok := value.([]any)
+		if !ok {
+			return nil, ErrInValues
+		}
+		sb.Where(sb.NotIn(fieldKeyName, values...))
+
+	// exists and not exists
+	// but how could you live and have no story to tell
+	// in the UI based query builder, `exists` and `not exists` are used for
+	// key membership checks, so depending on the column type, the condition changes
+	case types.FilterOperatorExists, types.FilterOperatorNotExists:
+		var value any
+		switch column.Type {
+		case schema.ColumnTypeString, schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString}:
+			value = ""
+			if operator == types.FilterOperatorExists {
+				sb.Where(sb.NE(fieldKeyName, value))
+			} else {
+				sb.Where(sb.E(fieldKeyName, value))
+			}
+		case schema.ColumnTypeUInt64, schema.ColumnTypeUInt32, schema.ColumnTypeUInt8:
+			value = 0
+			if operator == types.FilterOperatorExists {
+				sb.Where(sb.NE(fieldKeyName, value))
+			} else {
+				sb.Where(sb.E(fieldKeyName, value))
+			}
+		case schema.MapColumnType{
+			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
+			ValueType: schema.ColumnTypeString,
+		}, schema.MapColumnType{
+			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
+			ValueType: schema.ColumnTypeUInt8,
+		}, schema.MapColumnType{
+			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
+			ValueType: schema.ColumnTypeInt64,
+		}:
+			leftOperand := fmt.Sprintf("mapContains(%s, '%s')", column.Name, key.Name)
+			if operator == types.FilterOperatorExists {
+				sb.Where(sb.E(leftOperand, true))
+			} else {
+				sb.Where(sb.NE(leftOperand, true))
+			}
+		default:
+			return nil, fmt.Errorf("exists operator is not supported for column type %s", column.Type)
+		}
+	}
+	return sb, nil
 }
