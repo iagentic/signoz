@@ -696,7 +696,7 @@ func Test_buildTracesQuery(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := buildTracesQuery(tt.args.start, tt.args.end, tt.args.step, tt.args.mq, tt.args.panelType, tt.args.options)
+			got, _, err := buildTracesQuery(tt.args.start, tt.args.end, tt.args.step, tt.args.mq, tt.args.panelType, tt.args.options)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("buildTracesQuery() error = %v, wantErr %v", err, tt.wantErr)
 				return
