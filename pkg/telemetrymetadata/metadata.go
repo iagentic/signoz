@@ -32,6 +32,8 @@ type telemetryMetaStore struct {
 	logsV2TblName          string
 	relatedMetadataDBName  string
 	relatedMetadataTblName string
+
+	conditionBuilder types.ConditionBuilder
 }
 
 func NewTelemetryMetaStore(
@@ -61,6 +63,8 @@ func NewTelemetryMetaStore(
 		logsFieldsTblName:      logsFieldsTblName,
 		relatedMetadataDBName:  relatedMetadataDBName,
 		relatedMetadataTblName: relatedMetadataTblName,
+
+		conditionBuilder: NewConditionBuilder(),
 	}, nil
 }
 
@@ -490,7 +494,7 @@ func (t *telemetryMetaStore) GetKey(ctx context.Context, fieldKeySelector types.
 	return keys[fieldKeySelector.Name], nil
 }
 
-func (t *telemetryMetaStore) getRelatedValues(ctx context.Context, fieldKeySelector types.FieldKeySelector, existingSelections []types.ExistingFieldSelection) (any, error) {
+func (t *telemetryMetaStore) getRelatedValues(ctx context.Context, fieldKeySelector types.FieldKeySelector, existingQuery string) (any, error) {
 
 	args := []any{}
 
@@ -502,55 +506,20 @@ func (t *telemetryMetaStore) getRelatedValues(ctx context.Context, fieldKeySelec
 	andConditions = append(andConditions, `unix_milli <= ?`)
 	args = append(args, fieldKeySelector.EndUnixMilli)
 
-	if len(existingSelections) != 0 {
-		for _, item := range existingSelections {
-			// we only support string for related values
-			if item.Key.FieldDataType != types.FieldDataTypeString {
-				continue
-			}
-
-			var colName string
-			switch item.Key.FieldContext {
-			case types.FieldContextResource:
-				colName = "resource_attributes"
-			case types.FieldContextAttribute:
-				colName = "attributes"
-			default:
-				// we only support resource and tag for related values as of now
-				continue
-			}
-
-			addCondition := func(val any) {
-				andConditions = append(andConditions, fmt.Sprintf("mapContains(%s, ?)", colName))
-				args = append(args, item.Key.Name)
-				andConditions = append(andConditions, fmt.Sprintf("%s['%s'] = ?", colName, item.Key.Name))
-				args = append(args, val)
-			}
-			switch v := item.Value.(type) {
-			case string:
-				addCondition(v)
-			case []string:
-				for _, val := range v {
-					addCondition(val)
-				}
-			case []interface{}:
-				for _, val := range v {
-					addCondition(val)
-				}
-			}
-		}
+	if len(existingQuery) != 0 {
+		// TODO(srikanthccv): add the existing query to the where clause
 	}
 	whereClause := strings.Join(andConditions, " AND ")
 
-	var selectColumn string
-	switch fieldKeySelector.FieldContext {
-	case types.FieldContextResource:
-		selectColumn = "resource_attributes" + "['" + fieldKeySelector.Name + "']"
-	case types.FieldContextAttribute:
-		selectColumn = "attributes" + "['" + fieldKeySelector.Name + "']"
-	default:
-		selectColumn = "attributes" + "['" + fieldKeySelector.Name + "']"
+	key := types.TelemetryFieldKey{
+		Name:          fieldKeySelector.Name,
+		Signal:        fieldKeySelector.Signal,
+		FieldContext:  fieldKeySelector.FieldContext,
+		FieldDataType: fieldKeySelector.FieldDataType,
 	}
+
+	// TODO(srikanthccv): add the select column
+	selectColumn, _ := t.conditionBuilder.GetTableFieldName(ctx, key)
 
 	args = append(args, fieldKeySelector.Limit)
 	filterSubQuery := fmt.Sprintf(
@@ -582,8 +551,8 @@ func (t *telemetryMetaStore) getRelatedValues(ctx context.Context, fieldKeySelec
 	return attributeValues, nil
 }
 
-func (t *telemetryMetaStore) GetRelatedValues(ctx context.Context, fieldKeySelector types.FieldKeySelector, existingSelections []types.ExistingFieldSelection) (any, error) {
-	return t.getRelatedValues(ctx, fieldKeySelector, existingSelections)
+func (t *telemetryMetaStore) GetRelatedValues(ctx context.Context, fieldKeySelector types.FieldKeySelector, existingQuery string) (any, error) {
+	return t.getRelatedValues(ctx, fieldKeySelector, existingQuery)
 }
 
 func (t *telemetryMetaStore) getSpanFieldValues(_ context.Context) (any, error) {

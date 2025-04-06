@@ -6,6 +6,7 @@ import (
 
 	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
 	"github.com/SigNoz/signoz/pkg/types"
+	qbtypes "github.com/SigNoz/signoz/pkg/types/qbtypes/v5"
 	"github.com/huandu/go-sqlbuilder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -250,7 +251,7 @@ func TestGetFieldKeyName(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := conditionBuilder.getTableFieldName(ctx, tc.key)
+			result, err := conditionBuilder.GetTableFieldName(ctx, tc.key)
 
 			if tc.expectedError != nil {
 				assert.Equal(t, tc.expectedError, err)
@@ -269,7 +270,7 @@ func TestGetCondition(t *testing.T) {
 	testCases := []struct {
 		name          string
 		key           types.TelemetryFieldKey
-		operator      types.FilterOperator
+		operator      qbtypes.FilterOperator
 		value         any
 		expectedSQL   string
 		expectedError error
@@ -280,7 +281,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "body",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorEqual,
+			operator:      qbtypes.FilterOperatorEqual,
 			value:         "error message",
 			expectedSQL:   "body = ?",
 			expectedError: nil,
@@ -291,7 +292,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "timestamp",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorNotEqual,
+			operator:      qbtypes.FilterOperatorNotEqual,
 			value:         uint64(1617979338000000000),
 			expectedSQL:   "timestamp <> ?",
 			expectedError: nil,
@@ -303,7 +304,7 @@ func TestGetCondition(t *testing.T) {
 				FieldContext:  types.FieldContextAttribute,
 				FieldDataType: types.FieldDataTypeNumber,
 			},
-			operator:      types.FilterOperatorGreaterThan,
+			operator:      qbtypes.FilterOperatorGreaterThan,
 			value:         float64(100),
 			expectedSQL:   "attributes_number['request.duration'] > ?",
 			expectedError: nil,
@@ -315,7 +316,7 @@ func TestGetCondition(t *testing.T) {
 				FieldContext:  types.FieldContextAttribute,
 				FieldDataType: types.FieldDataTypeNumber,
 			},
-			operator:      types.FilterOperatorLessThan,
+			operator:      qbtypes.FilterOperatorLessThan,
 			value:         float64(1024),
 			expectedSQL:   "attributes_number['request.size'] < ?",
 			expectedError: nil,
@@ -326,7 +327,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "timestamp",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorGreaterThanOrEq,
+			operator:      qbtypes.FilterOperatorGreaterThanOrEq,
 			value:         uint64(1617979338000000000),
 			expectedSQL:   "timestamp >= ?",
 			expectedError: nil,
@@ -337,7 +338,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "timestamp",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorLessThanOrEq,
+			operator:      qbtypes.FilterOperatorLessThanOrEq,
 			value:         uint64(1617979338000000000),
 			expectedSQL:   "timestamp <= ?",
 			expectedError: nil,
@@ -348,7 +349,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "body",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorLike,
+			operator:      qbtypes.FilterOperatorLike,
 			value:         "%error%",
 			expectedSQL:   "body LIKE ?",
 			expectedError: nil,
@@ -359,7 +360,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "body",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorNotLike,
+			operator:      qbtypes.FilterOperatorNotLike,
 			value:         "%error%",
 			expectedSQL:   "body NOT LIKE ?",
 			expectedError: nil,
@@ -371,7 +372,7 @@ func TestGetCondition(t *testing.T) {
 				FieldContext:  types.FieldContextAttribute,
 				FieldDataType: types.FieldDataTypeString,
 			},
-			operator:      types.FilterOperatorILike,
+			operator:      qbtypes.FilterOperatorILike,
 			value:         "%admin%",
 			expectedSQL:   "WHERE LOWER(attributes_string['user.id']) LIKE LOWER(?)",
 			expectedError: nil,
@@ -383,7 +384,7 @@ func TestGetCondition(t *testing.T) {
 				FieldContext:  types.FieldContextAttribute,
 				FieldDataType: types.FieldDataTypeString,
 			},
-			operator:      types.FilterOperatorNotILike,
+			operator:      qbtypes.FilterOperatorNotILike,
 			value:         "%admin%",
 			expectedSQL:   "WHERE LOWER(attributes_string['user.id']) NOT LIKE LOWER(?)",
 			expectedError: nil,
@@ -394,7 +395,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "timestamp",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorBetween,
+			operator:      qbtypes.FilterOperatorBetween,
 			value:         []any{uint64(1617979338000000000), uint64(1617979348000000000)},
 			expectedSQL:   "timestamp BETWEEN ? AND ?",
 			expectedError: nil,
@@ -405,7 +406,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "timestamp",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorBetween,
+			operator:      qbtypes.FilterOperatorBetween,
 			value:         "invalid",
 			expectedSQL:   "",
 			expectedError: types.ErrBetweenValues,
@@ -416,7 +417,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "timestamp",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorBetween,
+			operator:      qbtypes.FilterOperatorBetween,
 			value:         []any{uint64(1617979338000000000)},
 			expectedSQL:   "",
 			expectedError: types.ErrBetweenValues,
@@ -427,7 +428,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "timestamp",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorNotBetween,
+			operator:      qbtypes.FilterOperatorNotBetween,
 			value:         []any{uint64(1617979338000000000), uint64(1617979348000000000)},
 			expectedSQL:   "timestamp NOT BETWEEN ? AND ?",
 			expectedError: nil,
@@ -438,7 +439,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "severity_text",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorIn,
+			operator:      qbtypes.FilterOperatorIn,
 			value:         []any{"error", "fatal", "critical"},
 			expectedSQL:   "severity_text IN (?, ?, ?)",
 			expectedError: nil,
@@ -449,7 +450,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "severity_text",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorIn,
+			operator:      qbtypes.FilterOperatorIn,
 			value:         "error",
 			expectedSQL:   "",
 			expectedError: types.ErrInValues,
@@ -460,7 +461,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "severity_text",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorNotIn,
+			operator:      qbtypes.FilterOperatorNotIn,
 			value:         []any{"debug", "info", "trace"},
 			expectedSQL:   "severity_text NOT IN (?, ?, ?)",
 			expectedError: nil,
@@ -471,7 +472,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "body",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorExists,
+			operator:      qbtypes.FilterOperatorExists,
 			value:         nil,
 			expectedSQL:   "body <> ?",
 			expectedError: nil,
@@ -482,7 +483,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "body",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorNotExists,
+			operator:      qbtypes.FilterOperatorNotExists,
 			value:         nil,
 			expectedSQL:   "body = ?",
 			expectedError: nil,
@@ -493,7 +494,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "timestamp",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorExists,
+			operator:      qbtypes.FilterOperatorExists,
 			value:         nil,
 			expectedSQL:   "timestamp <> ?",
 			expectedError: nil,
@@ -505,7 +506,7 @@ func TestGetCondition(t *testing.T) {
 				FieldContext:  types.FieldContextAttribute,
 				FieldDataType: types.FieldDataTypeString,
 			},
-			operator:      types.FilterOperatorExists,
+			operator:      qbtypes.FilterOperatorExists,
 			value:         nil,
 			expectedSQL:   "mapContains(attributes_string, 'user.id') = ?",
 			expectedError: nil,
@@ -517,7 +518,7 @@ func TestGetCondition(t *testing.T) {
 				FieldContext:  types.FieldContextAttribute,
 				FieldDataType: types.FieldDataTypeString,
 			},
-			operator:      types.FilterOperatorNotExists,
+			operator:      qbtypes.FilterOperatorNotExists,
 			value:         nil,
 			expectedSQL:   "mapContains(attributes_string, 'user.id') <> ?",
 			expectedError: nil,
@@ -528,7 +529,7 @@ func TestGetCondition(t *testing.T) {
 				Name:         "nonexistent_field",
 				FieldContext: types.FieldContextLog,
 			},
-			operator:      types.FilterOperatorEqual,
+			operator:      qbtypes.FilterOperatorEqual,
 			value:         "value",
 			expectedSQL:   "",
 			expectedError: types.ErrColumnNotFound,
@@ -559,7 +560,7 @@ func TestGetConditionMultiple(t *testing.T) {
 	testCases := []struct {
 		name          string
 		keys          []types.TelemetryFieldKey
-		operator      types.FilterOperator
+		operator      qbtypes.FilterOperator
 		value         any
 		expectedSQL   string
 		expectedError error
@@ -576,7 +577,7 @@ func TestGetConditionMultiple(t *testing.T) {
 					FieldContext: types.FieldContextLog,
 				},
 			},
-			operator:      types.FilterOperatorEqual,
+			operator:      qbtypes.FilterOperatorEqual,
 			value:         "error message",
 			expectedSQL:   "body = ? AND severity_text = ?",
 			expectedError: nil,

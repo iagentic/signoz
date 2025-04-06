@@ -2,11 +2,19 @@ package types
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
+	qbtypes "github.com/SigNoz/signoz/pkg/types/qbtypes/v5"
 	"github.com/huandu/go-sqlbuilder"
+)
+
+var (
+	ErrColumnNotFound = errors.New("column not found")
+	ErrBetweenValues  = errors.New("(not) between operator requires two values")
+	ErrInValues       = errors.New("(not) in operator requires a list of values")
 )
 
 // Signal is the signal of the telemetry data.
@@ -281,7 +289,7 @@ type Metadata interface {
 
 	// GetRelatedValues returns a list of related values for the given key name
 	// and the existing selection of keys.
-	GetRelatedValues(ctx context.Context, fieldKeySelector FieldKeySelector, existingSelections []ExistingFieldSelection) (any, error)
+	GetRelatedValues(ctx context.Context, fieldKeySelector FieldKeySelector, existingQuery string) (any, error)
 
 	// GetAllValues returns a list of all values.
 	GetAllValues(ctx context.Context, fieldKeySelector FieldKeySelector) (any, error)
@@ -292,6 +300,9 @@ type ConditionBuilder interface {
 	// GetColumn returns the column for the given key.
 	GetColumn(ctx context.Context, key TelemetryFieldKey) (*schema.Column, error)
 
+	// GetTableFieldName returns the table field name for the given key.
+	GetTableFieldName(ctx context.Context, key TelemetryFieldKey) (string, error)
+
 	// GetCondition returns the condition for the given key, operator and value.
-	GetCondition(ctx context.Context, key TelemetryFieldKey, operator FilterOperator, value any, sb *sqlbuilder.SelectBuilder) (string, error)
+	GetCondition(ctx context.Context, key TelemetryFieldKey, operator qbtypes.FilterOperator, value any, sb *sqlbuilder.SelectBuilder) (string, error)
 }

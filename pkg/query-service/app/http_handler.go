@@ -489,6 +489,14 @@ func (aH *APIHandler) RegisterQueryRangeV4Routes(router *mux.Router, am *AuthMid
 	subRouter.HandleFunc("/metric/metric_metadata", am.ViewAccess(aH.getMetricMetadata)).Methods(http.MethodGet)
 }
 
+func (aH *APIHandler) RegisterQueryRangeV5Routes(router *mux.Router, am *AuthMiddleware) {
+	subRouter := router.PathPrefix("/api/v5").Subrouter()
+	// subRouter.HandleFunc("/query_range", am.ViewAccess(aH.QueryRangeV5)).Methods(http.MethodPost)
+
+	subRouter.HandleFunc("/autocomplete/attribute_keys", am.ViewAccess(aH.autoCompleteAttributeKeys)).Methods(http.MethodGet)
+	subRouter.HandleFunc("/autocomplete/attribute_values", am.ViewAccess(aH.autoCompleteAttributeValuesPost)).Methods(http.MethodPost)
+}
+
 // todo(remove): Implemented at render package (github.com/SigNoz/signoz/pkg/http/render) with the new error structure
 func (aH *APIHandler) Respond(w http.ResponseWriter, data interface{}) {
 	writeHttpResponse(w, data)

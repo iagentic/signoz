@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/SigNoz/signoz/pkg/types"
+	qbtypes "github.com/SigNoz/signoz/pkg/types/qbtypes/v5"
 	"github.com/antlr4-go/antlr/v4"
 
 	sqlbuilder "github.com/huandu/go-sqlbuilder"
@@ -274,7 +275,7 @@ func (v *ClickHouseWhereClauseVisitor) VisitPrimary(ctx *PrimaryContext) any {
 		if keyCtx, ok := child.(*KeyContext); ok {
 			// create a full text search condition on the body field
 			keyText := keyCtx.GetText()
-			cond, err := v.conditionBuilder.GetCondition(context.Background(), v.fullTextColumn, types.FilterOperatorRegexp, keyText, v.builder)
+			cond, err := v.conditionBuilder.GetCondition(context.Background(), v.fullTextColumn, qbtypes.FilterOperatorRegexp, keyText, v.builder)
 			if err != nil {
 				return ""
 			}
@@ -291,9 +292,9 @@ func (v *ClickHouseWhereClauseVisitor) VisitComparison(ctx *ComparisonContext) a
 
 	// Handle EXISTS specially
 	if ctx.EXISTS() != nil {
-		op := types.FilterOperatorExists
+		op := qbtypes.FilterOperatorExists
 		if ctx.NOT() != nil {
-			op = types.FilterOperatorNotExists
+			op = qbtypes.FilterOperatorNotExists
 		}
 		var conds []string
 		for _, key := range keys {
@@ -309,9 +310,9 @@ func (v *ClickHouseWhereClauseVisitor) VisitComparison(ctx *ComparisonContext) a
 	// Handle IN clause
 	if ctx.InClause() != nil || ctx.NotInClause() != nil {
 		values := v.Visit(ctx.InClause()).([]any)
-		op := types.FilterOperatorIn
+		op := qbtypes.FilterOperatorIn
 		if ctx.NotInClause() != nil {
-			op = types.FilterOperatorNotIn
+			op = qbtypes.FilterOperatorNotIn
 		}
 		var conds []string
 		for _, key := range keys {
@@ -326,9 +327,9 @@ func (v *ClickHouseWhereClauseVisitor) VisitComparison(ctx *ComparisonContext) a
 
 	// Handle BETWEEN
 	if ctx.BETWEEN() != nil {
-		op := types.FilterOperatorBetween
+		op := qbtypes.FilterOperatorBetween
 		if ctx.NOT() != nil {
-			op = types.FilterOperatorNotBetween
+			op = qbtypes.FilterOperatorNotBetween
 		}
 
 		values := ctx.AllValue()
@@ -355,37 +356,37 @@ func (v *ClickHouseWhereClauseVisitor) VisitComparison(ctx *ComparisonContext) a
 	if len(values) > 0 {
 		value := v.Visit(values[0])
 
-		var op types.FilterOperator
+		var op qbtypes.FilterOperator
 
 		// Handle each type of comparison
 		if ctx.EQUALS() != nil {
-			op = types.FilterOperatorEqual
+			op = qbtypes.FilterOperatorEqual
 		} else if ctx.NOT_EQUALS() != nil || ctx.NEQ() != nil {
-			op = types.FilterOperatorNotEqual
+			op = qbtypes.FilterOperatorNotEqual
 		} else if ctx.LT() != nil {
-			op = types.FilterOperatorLessThan
+			op = qbtypes.FilterOperatorLessThan
 		} else if ctx.LE() != nil {
-			op = types.FilterOperatorLessThan
+			op = qbtypes.FilterOperatorLessThan
 		} else if ctx.GT() != nil {
-			op = types.FilterOperatorGreaterThan
+			op = qbtypes.FilterOperatorGreaterThan
 		} else if ctx.GE() != nil {
-			op = types.FilterOperatorGreaterThan
+			op = qbtypes.FilterOperatorGreaterThan
 		} else if ctx.LIKE() != nil {
-			op = types.FilterOperatorLike
+			op = qbtypes.FilterOperatorLike
 		} else if ctx.ILIKE() != nil {
-			op = types.FilterOperatorLike
+			op = qbtypes.FilterOperatorLike
 		} else if ctx.NOT_LIKE() != nil {
-			op = types.FilterOperatorNotLike
+			op = qbtypes.FilterOperatorNotLike
 		} else if ctx.NOT_ILIKE() != nil {
-			op = types.FilterOperatorNotLike
+			op = qbtypes.FilterOperatorNotLike
 		} else if ctx.REGEXP() != nil {
-			op = types.FilterOperatorRegexp
+			op = qbtypes.FilterOperatorRegexp
 		} else if ctx.NOT() != nil && ctx.REGEXP() != nil {
-			op = types.FilterOperatorNotRegexp
+			op = qbtypes.FilterOperatorNotRegexp
 		} else if ctx.CONTAINS() != nil {
-			op = types.FilterOperatorContains
+			op = qbtypes.FilterOperatorContains
 		} else if ctx.NOT() != nil && ctx.CONTAINS() != nil {
-			op = types.FilterOperatorNotContains
+			op = qbtypes.FilterOperatorNotContains
 		}
 
 		var conds []string
@@ -428,7 +429,7 @@ func (v *ClickHouseWhereClauseVisitor) VisitValueList(ctx *ValueListContext) any
 func (v *ClickHouseWhereClauseVisitor) VisitFullText(ctx *FullTextContext) any {
 	// remove quotes from the quotedText
 	quotedText := strings.Trim(ctx.QUOTED_TEXT().GetText(), "\"'")
-	cond, err := v.conditionBuilder.GetCondition(context.Background(), v.fullTextColumn, types.FilterOperatorRegexp, quotedText, v.builder)
+	cond, err := v.conditionBuilder.GetCondition(context.Background(), v.fullTextColumn, qbtypes.FilterOperatorRegexp, quotedText, v.builder)
 	if err != nil {
 		return ""
 	}

@@ -1,13 +1,5 @@
 package types
 
-import "errors"
-
-var (
-	ErrColumnNotFound = errors.New("column not found")
-	ErrBetweenValues  = errors.New("(not) between operator requires two values")
-	ErrInValues       = errors.New("(not) in operator requires a list of values")
-)
-
 // FilterOperator is the operator for the filter.
 type FilterOperator int
 

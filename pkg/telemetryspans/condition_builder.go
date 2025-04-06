@@ -6,6 +6,7 @@ import (
 
 	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
 	"github.com/SigNoz/signoz/pkg/types"
+	qbtypes "github.com/SigNoz/signoz/pkg/types/qbtypes/v5"
 	"github.com/huandu/go-sqlbuilder"
 )
 
@@ -156,7 +157,7 @@ func (c *conditionBuilder) GetColumn(ctx context.Context, key types.TelemetryFie
 	return nil, types.ErrColumnNotFound
 }
 
-func (c *conditionBuilder) getTableFieldName(ctx context.Context, key types.TelemetryFieldKey) (string, error) {
+func (c *conditionBuilder) GetTableFieldName(ctx context.Context, key types.TelemetryFieldKey) (string, error) {
 	column, err := c.GetColumn(ctx, key)
 	if err != nil {
 		return "", err
@@ -208,7 +209,7 @@ func (c *conditionBuilder) getTableFieldName(ctx context.Context, key types.Tele
 func (c *conditionBuilder) GetCondition(
 	ctx context.Context,
 	key types.TelemetryFieldKey,
-	operator types.FilterOperator,
+	operator qbtypes.FilterOperator,
 	value any,
 	sb *sqlbuilder.SelectBuilder,
 ) (string, error) {
@@ -217,7 +218,7 @@ func (c *conditionBuilder) GetCondition(
 		return "", err
 	}
 
-	tblFieldName, err := c.getTableFieldName(ctx, key)
+	tblFieldName, err := c.GetTableFieldName(ctx, key)
 	if err != nil {
 		return "", err
 	}
@@ -227,43 +228,43 @@ func (c *conditionBuilder) GetCondition(
 	// regular operators
 	switch operator {
 	// regular operators
-	case types.FilterOperatorEqual:
+	case qbtypes.FilterOperatorEqual:
 		return sb.E(tblFieldName, value), nil
-	case types.FilterOperatorNotEqual:
+	case qbtypes.FilterOperatorNotEqual:
 		return sb.NE(tblFieldName, value), nil
-	case types.FilterOperatorGreaterThan:
+	case qbtypes.FilterOperatorGreaterThan:
 		return sb.G(tblFieldName, value), nil
-	case types.FilterOperatorGreaterThanOrEq:
+	case qbtypes.FilterOperatorGreaterThanOrEq:
 		return sb.GE(tblFieldName, value), nil
-	case types.FilterOperatorLessThan:
+	case qbtypes.FilterOperatorLessThan:
 		return sb.LT(tblFieldName, value), nil
-	case types.FilterOperatorLessThanOrEq:
+	case qbtypes.FilterOperatorLessThanOrEq:
 		return sb.LE(tblFieldName, value), nil
 
 	// like and not like
-	case types.FilterOperatorLike:
+	case qbtypes.FilterOperatorLike:
 		return sb.Like(tblFieldName, value), nil
-	case types.FilterOperatorNotLike:
+	case qbtypes.FilterOperatorNotLike:
 		return sb.NotLike(tblFieldName, value), nil
-	case types.FilterOperatorILike:
+	case qbtypes.FilterOperatorILike:
 		return sb.ILike(tblFieldName, value), nil
-	case types.FilterOperatorNotILike:
+	case qbtypes.FilterOperatorNotILike:
 		return sb.NotILike(tblFieldName, value), nil
 
-	case types.FilterOperatorContains:
+	case qbtypes.FilterOperatorContains:
 		return sb.ILike(tblFieldName, value), nil
-	case types.FilterOperatorNotContains:
+	case qbtypes.FilterOperatorNotContains:
 		return sb.NotILike(tblFieldName, value), nil
 
-	case types.FilterOperatorRegexp:
+	case qbtypes.FilterOperatorRegexp:
 		exp := fmt.Sprintf(`match(%s, %s)`, tblFieldName, sb.Var(value))
 		return sb.And(exp), nil
-	case types.FilterOperatorNotRegexp:
+	case qbtypes.FilterOperatorNotRegexp:
 		exp := fmt.Sprintf(`not match(%s, %s)`, tblFieldName, sb.Var(value))
 		return sb.And(exp), nil
 
 	// between and not between
-	case types.FilterOperatorBetween:
+	case qbtypes.FilterOperatorBetween:
 		values, ok := value.([]any)
 		if !ok {
 			return "", types.ErrBetweenValues
@@ -272,7 +273,7 @@ func (c *conditionBuilder) GetCondition(
 			return "", types.ErrBetweenValues
 		}
 		return sb.Between(tblFieldName, values[0], values[1]), nil
-	case types.FilterOperatorNotBetween:
+	case qbtypes.FilterOperatorNotBetween:
 		values, ok := value.([]any)
 		if !ok {
 			return "", types.ErrBetweenValues
@@ -283,13 +284,13 @@ func (c *conditionBuilder) GetCondition(
 		return sb.NotBetween(tblFieldName, values[0], values[1]), nil
 
 	// in and not in
-	case types.FilterOperatorIn:
+	case qbtypes.FilterOperatorIn:
 		values, ok := value.([]any)
 		if !ok {
 			return "", types.ErrInValues
 		}
 		return sb.In(tblFieldName, values...), nil
-	case types.FilterOperatorNotIn:
+	case qbtypes.FilterOperatorNotIn:
 		values, ok := value.([]any)
 		if !ok {
 			return "", types.ErrInValues
@@ -299,14 +300,14 @@ func (c *conditionBuilder) GetCondition(
 	// exists and not exists
 	// in the query builder, `exists` and `not exists` are used for
 	// key membership checks, so depending on the column type, the condition changes
-	case types.FilterOperatorExists, types.FilterOperatorNotExists:
+	case qbtypes.FilterOperatorExists, qbtypes.FilterOperatorNotExists:
 		var value any
 		switch column.Type {
 		case schema.ColumnTypeString,
 			schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
 			schema.FixedStringColumnType{Length: 32}:
 			value = ""
-			if operator == types.FilterOperatorExists {
+			if operator == qbtypes.FilterOperatorExists {
 				return sb.NE(tblFieldName, value), nil
 			} else {
 				return sb.E(tblFieldName, value), nil
@@ -318,7 +319,7 @@ func (c *conditionBuilder) GetCondition(
 			schema.ColumnTypeInt16,
 			schema.ColumnTypeBool:
 			value = 0
-			if operator == types.FilterOperatorExists {
+			if operator == qbtypes.FilterOperatorExists {
 				return sb.NE(tblFieldName, value), nil
 			} else {
 				return sb.E(tblFieldName, value), nil
@@ -337,7 +338,7 @@ func (c *conditionBuilder) GetCondition(
 			if key.Materialized {
 				leftOperand = types.FieldKeyToMaterializedColumnNameForExists(key)
 			}
-			if operator == types.FilterOperatorExists {
+			if operator == qbtypes.FilterOperatorExists {
 				return sb.E(leftOperand, true), nil
 			} else {
 				return sb.NE(leftOperand, true), nil
