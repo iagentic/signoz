@@ -104,7 +104,7 @@ func (t *telemetryMetaStore) getTracesKeys(ctx context.Context, fieldKeySelector
 
 	for idx, fieldKeySelector := range fieldKeySelectors {
 		// key part of the selector
-		if fieldKeySelector.SelectorMatchType == types.FieldKeySelectorMatchTypeExact {
+		if fieldKeySelector.SelectorMatchType == types.FieldSelectorMatchTypeExact {
 			whereClause += "tag_key = ?"
 			args = append(args, fieldKeySelector.Name)
 		} else {
@@ -229,7 +229,7 @@ func (t *telemetryMetaStore) getLogsKeys(ctx context.Context, fieldKeySelectors 
 	var limit int
 
 	for idx, fieldKeySelector := range fieldKeySelectors {
-		if fieldKeySelector.SelectorMatchType == types.FieldKeySelectorMatchTypeExact {
+		if fieldKeySelector.SelectorMatchType == types.FieldSelectorMatchTypeExact {
 			whereClause += "tag_key = ?"
 			args = append(args, fieldKeySelector.Name)
 		} else {
@@ -338,7 +338,7 @@ func (t *telemetryMetaStore) getMetricsKeys(ctx context.Context, fieldKeySelecto
 	innerWhereClause += " __normalized = true"
 
 	for idx, fieldKeySelector := range fieldKeySelectors {
-		if fieldKeySelector.SelectorMatchType == types.FieldKeySelectorMatchTypeExact {
+		if fieldKeySelector.SelectorMatchType == types.FieldSelectorMatchTypeExact {
 			whereClause += "(distinctTagKey = ? AND distinctTagKey NOT LIKE '\\_\\_%%')"
 			args = append(args, fieldKeySelector.Name)
 		} else {
@@ -494,34 +494,34 @@ func (t *telemetryMetaStore) GetKey(ctx context.Context, fieldKeySelector types.
 	return keys[fieldKeySelector.Name], nil
 }
 
-func (t *telemetryMetaStore) getRelatedValues(ctx context.Context, fieldKeySelector types.FieldKeySelector, existingQuery string) (any, error) {
+func (t *telemetryMetaStore) getRelatedValues(ctx context.Context, fieldValueSelector types.FieldValueSelector) ([]string, error) {
 
 	args := []any{}
 
 	var andConditions []string
 
 	andConditions = append(andConditions, `unix_milli >= ?`)
-	args = append(args, fieldKeySelector.StartUnixMilli)
+	args = append(args, fieldValueSelector.StartUnixMilli)
 
 	andConditions = append(andConditions, `unix_milli <= ?`)
-	args = append(args, fieldKeySelector.EndUnixMilli)
+	args = append(args, fieldValueSelector.EndUnixMilli)
 
-	if len(existingQuery) != 0 {
+	if len(fieldValueSelector.ExistingQuery) != 0 {
 		// TODO(srikanthccv): add the existing query to the where clause
 	}
 	whereClause := strings.Join(andConditions, " AND ")
 
 	key := types.TelemetryFieldKey{
-		Name:          fieldKeySelector.Name,
-		Signal:        fieldKeySelector.Signal,
-		FieldContext:  fieldKeySelector.FieldContext,
-		FieldDataType: fieldKeySelector.FieldDataType,
+		Name:          fieldValueSelector.Name,
+		Signal:        fieldValueSelector.Signal,
+		FieldContext:  fieldValueSelector.FieldContext,
+		FieldDataType: fieldValueSelector.FieldDataType,
 	}
 
 	// TODO(srikanthccv): add the select column
 	selectColumn, _ := t.conditionBuilder.GetTableFieldName(ctx, key)
 
-	args = append(args, fieldKeySelector.Limit)
+	args = append(args, fieldValueSelector.Limit)
 	filterSubQuery := fmt.Sprintf(
 		"SELECT DISTINCT %s FROM %s.%s WHERE %s LIMIT ?",
 		selectColumn,
@@ -551,26 +551,26 @@ func (t *telemetryMetaStore) getRelatedValues(ctx context.Context, fieldKeySelec
 	return attributeValues, nil
 }
 
-func (t *telemetryMetaStore) GetRelatedValues(ctx context.Context, fieldKeySelector types.FieldKeySelector, existingQuery string) (any, error) {
-	return t.getRelatedValues(ctx, fieldKeySelector, existingQuery)
+func (t *telemetryMetaStore) GetRelatedValues(ctx context.Context, fieldValueSelector types.FieldValueSelector) ([]string, error) {
+	return t.getRelatedValues(ctx, fieldValueSelector)
 }
 
-func (t *telemetryMetaStore) getSpanFieldValues(_ context.Context) (any, error) {
+func (t *telemetryMetaStore) getSpanFieldValues(_ context.Context) (*types.TelemetryFieldValues, error) {
 	return nil, nil
 }
 
-func (t *telemetryMetaStore) getLogFieldValues(_ context.Context) (any, error) {
+func (t *telemetryMetaStore) getLogFieldValues(_ context.Context) (*types.TelemetryFieldValues, error) {
 	return nil, nil
 }
 
-func (t *telemetryMetaStore) getMetricFieldValues(_ context.Context) (any, error) {
+func (t *telemetryMetaStore) getMetricFieldValues(_ context.Context) (*types.TelemetryFieldValues, error) {
 	return nil, nil
 }
 
-func (t *telemetryMetaStore) GetAllValues(ctx context.Context, fieldKeySelector types.FieldKeySelector) (any, error) {
-	var values any
+func (t *telemetryMetaStore) GetAllValues(ctx context.Context, fieldValueSelector types.FieldValueSelector) (*types.TelemetryFieldValues, error) {
+	var values *types.TelemetryFieldValues
 	var err error
-	switch fieldKeySelector.FieldContext {
+	switch fieldValueSelector.FieldContext {
 	case types.FieldContextSpan:
 		values, err = t.getSpanFieldValues(ctx)
 	case types.FieldContextLog:

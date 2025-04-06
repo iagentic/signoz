@@ -31,6 +31,15 @@ func (s Signal) String() string {
 	return string(s)
 }
 
+func (s Signal) Validate() error {
+	switch s {
+	case SignalTraces, SignalLogs, SignalMetrics:
+		return nil
+	default:
+		return fmt.Errorf("invalid signal: %s", s)
+	}
+}
+
 // FieldContext is the context of the field. It is expected to be used to disambiguate b/w
 // different contexts of the same field.
 //
@@ -228,21 +237,21 @@ func DataTypeCollisionHandledFieldName(key TelemetryFieldKey, value any, tblFiel
 	return tblFieldName, value
 }
 
-// FieldKeySelectorMatchType is the match type of the field key selector.
-type FieldKeySelectorMatchType string
+// FieldSelectorMatchType is the match type of the field key selector.
+type FieldSelectorMatchType string
 
 const (
-	FieldKeySelectorMatchTypeExact FieldKeySelectorMatchType = "exact"
-	FieldKeySelectorMatchTypeFuzzy FieldKeySelectorMatchType = "fuzzy"
+	FieldSelectorMatchTypeExact FieldSelectorMatchType = "exact"
+	FieldSelectorMatchTypeFuzzy FieldSelectorMatchType = "fuzzy"
 )
 
 type TelemetryFieldKey struct {
 	Name          string        `json:"name"`
-	Description   string        `json:"description"`
-	Unit          string        `json:"unit"`
-	Signal        Signal        `json:"signal"`
-	FieldContext  FieldContext  `json:"fieldContext"`
-	FieldDataType FieldDataType `json:"fieldDataType"`
+	Description   string        `json:"description,omitempty"`
+	Unit          string        `json:"unit,omitempty"`
+	Signal        Signal        `json:"signal,omitempty"`
+	FieldContext  FieldContext  `json:"fieldContext,omitempty"`
+	FieldDataType FieldDataType `json:"fieldDataType,omitempty"`
 	Materialized  bool          `json:"-"`
 }
 
@@ -254,9 +263,11 @@ func FieldKeyToMaterializedColumnNameForExists(key TelemetryFieldKey) string {
 	return fmt.Sprintf("%s_%s_%s_exists", key.FieldContext, key.FieldDataType.String(), strings.ReplaceAll(key.Name, ".", "$$"))
 }
 
-type ExistingFieldSelection struct {
-	Key   TelemetryFieldKey `json:"key"`
-	Value any               `json:"value"`
+type TelemetryFieldValues struct {
+	StringValues  []string  `json:"stringValues"`
+	BoolValues    []bool    `json:"boolValues"`
+	NumberValues  []float64 `json:"numberValues"`
+	RelatedValues []string  `json:"relatedValues"`
 }
 
 type MetricContext struct {
@@ -264,15 +275,22 @@ type MetricContext struct {
 }
 
 type FieldKeySelector struct {
-	StartUnixMilli    int64                     `json:"startUnixMilli"`
-	EndUnixMilli      int64                     `json:"endUnixMilli"`
-	Signal            Signal                    `json:"signal"`
-	FieldContext      FieldContext              `json:"fieldContext"`
-	FieldDataType     FieldDataType             `json:"fieldDataType"`
-	Name              string                    `json:"name"`
-	SelectorMatchType FieldKeySelectorMatchType `json:"selectorMatchType"`
-	Limit             int                       `json:"limit"`
-	MetricContext     *MetricContext            `json:"metricContext,omitempty"`
+	StartUnixMilli    int64                  `json:"startUnixMilli"`
+	EndUnixMilli      int64                  `json:"endUnixMilli"`
+	Signal            Signal                 `json:"signal"`
+	FieldContext      FieldContext           `json:"fieldContext"`
+	FieldDataType     FieldDataType          `json:"fieldDataType"`
+	Name              string                 `json:"name"`
+	SelectorMatchType FieldSelectorMatchType `json:"selectorMatchType"`
+	Limit             int                    `json:"limit"`
+	MetricContext     *MetricContext         `json:"metricContext,omitempty"`
+}
+
+type FieldValueSelector struct {
+	FieldKeySelector
+	ExistingQuery string `json:"existingQuery"`
+	Value         any    `json:"value"`
+	Limit         int    `json:"limit"`
 }
 
 // Metadata is the interface for the telemetry metadata.
@@ -289,10 +307,10 @@ type Metadata interface {
 
 	// GetRelatedValues returns a list of related values for the given key name
 	// and the existing selection of keys.
-	GetRelatedValues(ctx context.Context, fieldKeySelector FieldKeySelector, existingQuery string) (any, error)
+	GetRelatedValues(ctx context.Context, fieldValueSelector FieldValueSelector) ([]string, error)
 
 	// GetAllValues returns a list of all values.
-	GetAllValues(ctx context.Context, fieldKeySelector FieldKeySelector) (any, error)
+	GetAllValues(ctx context.Context, fieldValueSelector FieldValueSelector) (*TelemetryFieldValues, error)
 }
 
 // ConditionBuilder is the interface for building the condition part of the query.
