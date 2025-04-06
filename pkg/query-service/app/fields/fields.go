@@ -31,7 +31,7 @@ func NewFieldsResource(
 		telemetrymetrics.TimeseriesV41weekLocalTableName,
 		telemetrylogs.DBName,
 		telemetrylogs.LogsV2TableName,
-		telemetrylogs.LogsV2LocalTableName,
+		telemetrylogs.TagAttributesV2TableName,
 		telemetrymetadata.DBName,
 		telemetrymetadata.AttributesMetadataLocalTableName,
 	)
@@ -60,11 +60,11 @@ func (f *FieldsResource) GetFieldValues(ctx context.Context, fieldValueSelector 
 	if err != nil {
 		// we don't want to return error if we fail to get related values for some reason
 		zap.L().Error("failed to get related values", zap.Error(err))
+		relatedValues = []string{}
 	}
 
 	return &types.TelemetryFieldValues{
 		StringValues:  allValues.StringValues,
-		BoolValues:    allValues.BoolValues,
 		NumberValues:  allValues.NumberValues,
 		RelatedValues: relatedValues,
 	}, nil

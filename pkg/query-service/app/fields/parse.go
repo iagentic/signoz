@@ -31,6 +31,8 @@ func ParseFieldKeyRequest(r *http.Request) (*types.FieldKeySelector, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, errors.TypeInvalidInput, errors.CodeInvalidInput, "failed to parse startUnixMilli")
 		}
+		// round down to the nearest 6 hours
+		startUnixMilli = startUnixMilli - (startUnixMilli % 21600000)
 	}
 	if r.URL.Query().Get("endUnixMilli") != "" {
 		endUnixMilli, err = strconv.ParseInt(r.URL.Query().Get("endUnixMilli"), 10, 64)

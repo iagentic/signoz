@@ -252,7 +252,7 @@ type TelemetryFieldKey struct {
 	Signal        Signal        `json:"signal,omitempty"`
 	FieldContext  FieldContext  `json:"fieldContext,omitempty"`
 	FieldDataType FieldDataType `json:"fieldDataType,omitempty"`
-	Materialized  bool          `json:"-"`
+	Materialized  bool          `json:"materialized,omitempty"`
 }
 
 func FieldKeyToMaterializedColumnName(key TelemetryFieldKey) string {
@@ -264,10 +264,10 @@ func FieldKeyToMaterializedColumnNameForExists(key TelemetryFieldKey) string {
 }
 
 type TelemetryFieldValues struct {
-	StringValues  []string  `json:"stringValues"`
-	BoolValues    []bool    `json:"boolValues"`
-	NumberValues  []float64 `json:"numberValues"`
-	RelatedValues []string  `json:"relatedValues"`
+	StringValues  []string  `json:"stringValues,omitempty"`
+	BoolValues    []bool    `json:"boolValues,omitempty"`
+	NumberValues  []float64 `json:"numberValues,omitempty"`
+	RelatedValues []string  `json:"relatedValues,omitempty"`
 }
 
 type MetricContext struct {
@@ -289,7 +289,7 @@ type FieldKeySelector struct {
 type FieldValueSelector struct {
 	FieldKeySelector
 	ExistingQuery string `json:"existingQuery"`
-	Value         any    `json:"value"`
+	Value         string `json:"value"`
 	Limit         int    `json:"limit"`
 }
 
