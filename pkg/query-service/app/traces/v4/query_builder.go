@@ -417,7 +417,7 @@ func buildTracesQuery(start, end, step int64, mq *v3.BuilderQuery, panelType v3.
 // PrepareTracesQuery returns the query string for traces
 // start and end are in epoch millisecond
 // step is in seconds
-func PrepareTracesQuery(start, end int64, panelType v3.PanelType, mq *v3.BuilderQuery, options v3.QBOptions) (string, error) {
+func PrepareTracesQuery(start, end int64, panelType v3.PanelType, mq *v3.BuilderQuery, options v3.QBOptions) (string, []any, error) {
 	// adjust the start and end time to the step interval
 	if panelType == v3.PanelTypeGraph {
 		// adjust the start and end time to the step interval for graph panel types
@@ -428,22 +428,22 @@ func PrepareTracesQuery(start, end int64, panelType v3.PanelType, mq *v3.Builder
 		// give me just the group by names
 		query, err := buildTracesQuery(start, end, mq.StepInterval, mq, panelType, options)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		query = tracesV3.AddLimitToQuery(query, mq.Limit)
 
-		return query, nil
+		return query, nil, nil
 	} else if options.GraphLimitQtype == constants.SecondQueryGraphLimit {
 		query, err := buildTracesQuery(start, end, mq.StepInterval, mq, panelType, options)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
-		return query, nil
+		return query, nil, nil
 	}
 
 	query, err := buildTracesQuery(start, end, mq.StepInterval, mq, panelType, options)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if panelType == v3.PanelTypeValue {
 		query, err = tracesV3.ReduceToQuery(query, mq.ReduceTo, mq.AggregateOperator)
@@ -455,5 +455,5 @@ func PrepareTracesQuery(start, end int64, panelType v3.PanelType, mq *v3.Builder
 			query = tracesV3.AddOffsetToQuery(query, mq.Offset)
 		}
 	}
-	return query, err
+	return query, nil, nil
 }
