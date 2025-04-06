@@ -203,7 +203,6 @@ func NewAPIHandler(opts APIHandlerOpts) (*APIHandler, error) {
 		Cache:             opts.Cache,
 		KeyGenerator:      queryBuilder.NewKeyGenerator(),
 		FluxInterval:      opts.FluxInterval,
-		FeatureLookup:     opts.FeatureFlags,
 		UseLogsNewSchema:  opts.UseLogsNewSchema,
 		UseTraceNewSchema: opts.UseTraceNewSchema,
 	}
@@ -213,7 +212,6 @@ func NewAPIHandler(opts APIHandlerOpts) (*APIHandler, error) {
 		Cache:             opts.Cache,
 		KeyGenerator:      queryBuilder.NewKeyGenerator(),
 		FluxInterval:      opts.FluxInterval,
-		FeatureLookup:     opts.FeatureFlags,
 		UseLogsNewSchema:  opts.UseLogsNewSchema,
 		UseTraceNewSchema: opts.UseTraceNewSchema,
 	}
@@ -287,7 +285,7 @@ func NewAPIHandler(opts APIHandlerOpts) (*APIHandler, error) {
 		BuildTraceQuery:  tracesQueryBuilder,
 		BuildLogQuery:    logsQueryBuilder,
 	}
-	aH.queryBuilder = queryBuilder.NewQueryBuilder(builderOpts, aH.featureFlags)
+	aH.queryBuilder = queryBuilder.NewQueryBuilder(builderOpts)
 
 	// check if at least one user is created
 	hasUsers, err := aH.appDao.GetUsersWithOpts(context.Background(), 1)
