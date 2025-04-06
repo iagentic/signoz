@@ -255,6 +255,62 @@ type TelemetryFieldKey struct {
 	Materialized  bool          `json:"materialized,omitempty"`
 }
 
+func GetFieldKeyFromString(key string) TelemetryFieldKey {
+
+	keyTextParts := strings.Split(key, ".")
+
+	var explicitFieldContextProvided, explicitFieldDataTypeProvided bool
+	var explicitFieldContext FieldContext
+	var explicitFieldDataType FieldDataType
+
+	if len(keyTextParts) > 1 {
+		explicitFieldContext = FieldContextFromString(keyTextParts[0])
+		if explicitFieldContext != FieldContextUnspecified {
+			explicitFieldContextProvided = true
+		}
+	}
+
+	if explicitFieldContextProvided {
+		keyTextParts = keyTextParts[1:]
+	}
+
+	// check if there is a field data type provided
+	if len(keyTextParts) > 1 {
+		lastPart := keyTextParts[len(keyTextParts)-1]
+		lastPartParts := strings.Split(lastPart, ":")
+		if len(lastPartParts) > 1 {
+			explicitFieldDataType = FieldDataTypeFromString(lastPartParts[1])
+			if explicitFieldDataType != FieldDataTypeUnspecified {
+				explicitFieldDataTypeProvided = true
+			}
+		}
+
+		if explicitFieldDataTypeProvided {
+			keyTextParts[len(keyTextParts)-1] = lastPartParts[0]
+		}
+	}
+
+	realKey := strings.Join(keyTextParts, ".")
+
+	fieldKeySelector := TelemetryFieldKey{
+		Name: realKey,
+	}
+
+	if explicitFieldContextProvided {
+		fieldKeySelector.FieldContext = explicitFieldContext
+	} else {
+		fieldKeySelector.FieldContext = FieldContextUnspecified
+	}
+
+	if explicitFieldDataTypeProvided {
+		fieldKeySelector.FieldDataType = explicitFieldDataType
+	} else {
+		fieldKeySelector.FieldDataType = FieldDataTypeUnspecified
+	}
+
+	return fieldKeySelector
+}
+
 func FieldKeyToMaterializedColumnName(key TelemetryFieldKey) string {
 	return fmt.Sprintf("%s_%s_%s", key.FieldContext, key.FieldDataType.String(), strings.ReplaceAll(key.Name, ".", "$$"))
 }

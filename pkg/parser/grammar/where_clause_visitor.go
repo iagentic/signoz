@@ -58,62 +58,6 @@ func (l *ErrorListener) SyntaxError(recognizer antlr.Recognizer, offendingSymbol
 	l.Errors = append(l.Errors, fmt.Sprintf("line %d:%d %s", line, column, msg))
 }
 
-func getFieldSelectorFromKey(key string) types.FieldKeySelector {
-
-	keyTextParts := strings.Split(key, ".")
-
-	var explicitFieldContextProvided, explicitFieldDataTypeProvided bool
-	var explicitFieldContext types.FieldContext
-	var explicitFieldDataType types.FieldDataType
-
-	if len(keyTextParts) > 1 {
-		explicitFieldContext = types.FieldContextFromString(keyTextParts[0])
-		if explicitFieldContext != types.FieldContextUnspecified {
-			explicitFieldContextProvided = true
-		}
-	}
-
-	if explicitFieldContextProvided {
-		keyTextParts = keyTextParts[1:]
-	}
-
-	// check if there is a field data type provided
-	if len(keyTextParts) > 1 {
-		lastPart := keyTextParts[len(keyTextParts)-1]
-		lastPartParts := strings.Split(lastPart, ":")
-		if len(lastPartParts) > 1 {
-			explicitFieldDataType = types.FieldDataTypeFromString(lastPartParts[1])
-			if explicitFieldDataType != types.FieldDataTypeUnspecified {
-				explicitFieldDataTypeProvided = true
-			}
-		}
-
-		if explicitFieldDataTypeProvided {
-			keyTextParts[len(keyTextParts)-1] = lastPartParts[0]
-		}
-	}
-
-	realKey := strings.Join(keyTextParts, ".")
-
-	fieldKeySelector := types.FieldKeySelector{
-		Name: realKey,
-	}
-
-	if explicitFieldContextProvided {
-		fieldKeySelector.FieldContext = explicitFieldContext
-	} else {
-		fieldKeySelector.FieldContext = types.FieldContextUnspecified
-	}
-
-	if explicitFieldDataTypeProvided {
-		fieldKeySelector.FieldDataType = explicitFieldDataType
-	} else {
-		fieldKeySelector.FieldDataType = types.FieldDataTypeUnspecified
-	}
-
-	return fieldKeySelector
-}
-
 // PrepareWhereClause generates a ClickHouse compatible WHERE clause from the filter query
 func PrepareWhereClause(
 	query string,
@@ -530,17 +474,17 @@ func (v *ClickHouseWhereClauseVisitor) VisitValue(ctx *ValueContext) any {
 // VisitKey handles field/column references
 func (v *ClickHouseWhereClauseVisitor) VisitKey(ctx *KeyContext) any {
 
-	fieldKeySelector := getFieldSelectorFromKey(ctx.KEY().GetText())
+	fieldKey := types.GetFieldKeyFromString(ctx.KEY().GetText())
 
-	fieldKeysForName := v.fieldKeys[fieldKeySelector.Name]
+	fieldKeysForName := v.fieldKeys[fieldKey.Name]
 
 	if len(fieldKeysForName) == 0 {
-		v.errors = append(v.errors, fmt.Sprintf("Key %s not found", fieldKeySelector.Name))
+		v.errors = append(v.errors, fmt.Sprintf("Key %s not found", fieldKey.Name))
 	}
 
 	if len(fieldKeysForName) > 1 {
 		// this is warning state, we must have a unambiguous key
-		v.warnings = append(v.warnings, fmt.Sprintf("Key %s is ambiguous, found %d different combinations of field context and data type", fieldKeySelector.Name, len(fieldKeysForName)))
+		v.warnings = append(v.warnings, fmt.Sprintf("Key %s is ambiguous, found %d different combinations of field context and data type", fieldKey.Name, len(fieldKeysForName)))
 	}
 
 	return fieldKeysForName
