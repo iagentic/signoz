@@ -1,7 +1,10 @@
 package telemetrymetadata
 
 import (
+	"slices"
 	"testing"
+
+	"github.com/SigNoz/signoz/pkg/types"
 )
 
 func TestExtractFieldKeysFromTblStatement(t *testing.T) {
@@ -97,8 +100,79 @@ func TestExtractFieldKeysFromTblStatement(t *testing.T) {
 		t.Fatalf("failed to extract field keys from tbl statement: %v", err)
 	}
 
-	for _, key := range keys {
-		t.Logf("key: %v\n", key)
+	// some expected keys
+	expectedKeys := []types.TelemetryFieldKey{
+		{
+			Name:          "k8s.pod.name",
+			FieldContext:  types.FieldContextResource,
+			FieldDataType: types.FieldDataTypeString,
+			Materialized:  true,
+		},
+		{
+			Name:          "k8s.cluster.name",
+			FieldContext:  types.FieldContextResource,
+			FieldDataType: types.FieldDataTypeString,
+			Materialized:  true,
+		},
+		{
+			Name:          "k8s.namespace.name",
+			FieldContext:  types.FieldContextResource,
+			FieldDataType: types.FieldDataTypeString,
+			Materialized:  true,
+		},
+		{
+			Name:          "k8s.deployment.name",
+			FieldContext:  types.FieldContextResource,
+			FieldDataType: types.FieldDataTypeString,
+			Materialized:  true,
+		},
+		{
+			Name:          "k8s.node.name",
+			FieldContext:  types.FieldContextResource,
+			FieldDataType: types.FieldDataTypeString,
+			Materialized:  true,
+		},
+		{
+			Name:          "k8s.container.name",
+			FieldContext:  types.FieldContextResource,
+			FieldDataType: types.FieldDataTypeString,
+			Materialized:  true,
+		},
+		{
+			Name:          "processor",
+			FieldContext:  types.FieldContextAttribute,
+			FieldDataType: types.FieldDataTypeString,
+			Materialized:  true,
+		},
+		{
+			Name:          "input_size",
+			FieldContext:  types.FieldContextAttribute,
+			FieldDataType: types.FieldDataTypeFloat64,
+			Materialized:  true,
+		},
+		{
+			Name:          "finished_at_ts",
+			FieldContext:  types.FieldContextAttribute,
+			FieldDataType: types.FieldDataTypeFloat64,
+			Materialized:  true,
+		},
+		{
+			Name:          "log.iostream",
+			FieldContext:  types.FieldContextAttribute,
+			FieldDataType: types.FieldDataTypeString,
+			Materialized:  true,
+		},
+		{
+			Name:          "log.file.path",
+			FieldContext:  types.FieldContextAttribute,
+			FieldDataType: types.FieldDataTypeString,
+			Materialized:  true,
+		},
 	}
-	t.Fail()
+
+	for _, key := range expectedKeys {
+		if !slices.Contains(keys, key) {
+			t.Errorf("expected key %v not found", key)
+		}
+	}
 }

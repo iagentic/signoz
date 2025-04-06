@@ -150,7 +150,18 @@ func TestGetColumn(t *testing.T) {
 				FieldContext: types.FieldContextLog,
 			},
 			expectedCol:   nil,
-			expectedError: ErrColumnNotFound,
+			expectedError: types.ErrColumnNotFound,
+		},
+		{
+			name: "did_user_login",
+			key: types.TelemetryFieldKey{
+				Name:          "did_user_login",
+				Signal:        types.SignalLogs,
+				FieldContext:  types.FieldContextAttribute,
+				FieldDataType: types.FieldDataTypeBool,
+			},
+			expectedCol:   mainColumns["attributes_bool"],
+			expectedError: nil,
 		},
 	}
 
@@ -204,7 +215,7 @@ func TestGetFieldKeyName(t *testing.T) {
 				FieldContext:  types.FieldContextAttribute,
 				FieldDataType: types.FieldDataTypeNumber,
 			},
-			expectedResult: "attributes_int['request.size']",
+			expectedResult: "attributes_number['request.size']",
 			expectedError:  nil,
 		},
 		{
@@ -233,13 +244,13 @@ func TestGetFieldKeyName(t *testing.T) {
 				FieldContext: types.FieldContextLog,
 			},
 			expectedResult: "",
-			expectedError:  ErrColumnNotFound,
+			expectedError:  types.ErrColumnNotFound,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := conditionBuilder.getFieldKeyName(ctx, tc.key)
+			result, err := conditionBuilder.getTableFieldName(ctx, tc.key)
 
 			if tc.expectedError != nil {
 				assert.Equal(t, tc.expectedError, err)
@@ -294,7 +305,7 @@ func TestGetCondition(t *testing.T) {
 			},
 			operator:      types.FilterOperatorGreaterThan,
 			value:         float64(100),
-			expectedSQL:   "attributes_int['request.duration'] > ?",
+			expectedSQL:   "attributes_number['request.duration'] > ?",
 			expectedError: nil,
 		},
 		{
@@ -306,7 +317,7 @@ func TestGetCondition(t *testing.T) {
 			},
 			operator:      types.FilterOperatorLessThan,
 			value:         float64(1024),
-			expectedSQL:   "attributes_int['request.size'] < ?",
+			expectedSQL:   "attributes_number['request.size'] < ?",
 			expectedError: nil,
 		},
 		{
@@ -397,7 +408,7 @@ func TestGetCondition(t *testing.T) {
 			operator:      types.FilterOperatorBetween,
 			value:         "invalid",
 			expectedSQL:   "",
-			expectedError: ErrBetweenValues,
+			expectedError: types.ErrBetweenValues,
 		},
 		{
 			name: "Between operator - insufficient values",
@@ -408,7 +419,7 @@ func TestGetCondition(t *testing.T) {
 			operator:      types.FilterOperatorBetween,
 			value:         []any{uint64(1617979338000000000)},
 			expectedSQL:   "",
-			expectedError: ErrBetweenValues,
+			expectedError: types.ErrBetweenValues,
 		},
 		{
 			name: "Not Between operator - timestamp",
@@ -441,7 +452,7 @@ func TestGetCondition(t *testing.T) {
 			operator:      types.FilterOperatorIn,
 			value:         "error",
 			expectedSQL:   "",
-			expectedError: ErrInValues,
+			expectedError: types.ErrInValues,
 		},
 		{
 			name: "Not In operator - severity_text",
@@ -520,7 +531,7 @@ func TestGetCondition(t *testing.T) {
 			operator:      types.FilterOperatorEqual,
 			value:         "value",
 			expectedSQL:   "",
-			expectedError: ErrColumnNotFound,
+			expectedError: types.ErrColumnNotFound,
 		},
 	}
 

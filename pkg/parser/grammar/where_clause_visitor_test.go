@@ -263,6 +263,7 @@ func TestConvertToClickHouseLogsQuery(t *testing.T) {
 	}
 
 	for _, c := range cases {
+		fmt.Println("c.name", c.name)
 		chQuery, chQueryArgs, err := PrepareWhereClause(c.query, c.fieldKeys, telemetrylogs.NewConditionBuilder(), types.TelemetryFieldKey{
 			Name:          "body",
 			Signal:        types.SignalLogs,

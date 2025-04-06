@@ -100,7 +100,7 @@ func (t *telemetryMetaStore) getTracesKeys(ctx context.Context, fieldKeySelector
 
 	for idx, fieldKeySelector := range fieldKeySelectors {
 		// key part of the selector
-		if fieldKeySelector.SelectorType == types.FieldKeySelectorTypeExact {
+		if fieldKeySelector.SelectorMatchType == types.FieldKeySelectorMatchTypeExact {
 			whereClause += "tag_key = ?"
 			args = append(args, fieldKeySelector.Name)
 		} else {
@@ -225,7 +225,7 @@ func (t *telemetryMetaStore) getLogsKeys(ctx context.Context, fieldKeySelectors 
 	var limit int
 
 	for idx, fieldKeySelector := range fieldKeySelectors {
-		if fieldKeySelector.SelectorType == types.FieldKeySelectorTypeExact {
+		if fieldKeySelector.SelectorMatchType == types.FieldKeySelectorMatchTypeExact {
 			whereClause += "tag_key = ?"
 			args = append(args, fieldKeySelector.Name)
 		} else {
@@ -334,7 +334,7 @@ func (t *telemetryMetaStore) getMetricsKeys(ctx context.Context, fieldKeySelecto
 	innerWhereClause += " __normalized = true"
 
 	for idx, fieldKeySelector := range fieldKeySelectors {
-		if fieldKeySelector.SelectorType == types.FieldKeySelectorTypeExact {
+		if fieldKeySelector.SelectorMatchType == types.FieldKeySelectorMatchTypeExact {
 			whereClause += "(distinctTagKey = ? AND distinctTagKey NOT LIKE '\\_\\_%%')"
 			args = append(args, fieldKeySelector.Name)
 		} else {

@@ -2,9 +2,7 @@ package telemetrylogs
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 
 	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
 	"github.com/SigNoz/signoz/pkg/types"
@@ -35,7 +33,7 @@ var (
 		}},
 		"attributes_bool": {Name: "attributes_bool", Type: schema.MapColumnType{
 			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
-			ValueType: schema.ColumnTypeUInt8,
+			ValueType: schema.ColumnTypeBool,
 		}},
 		"resources_string": {Name: "resources_string", Type: schema.MapColumnType{
 			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
@@ -48,10 +46,6 @@ var (
 			ValueType: schema.ColumnTypeString,
 		}},
 	}
-
-	ErrColumnNotFound = errors.New("column not found")
-	ErrBetweenValues  = errors.New("(not) between operator requires two values")
-	ErrInValues       = errors.New("(not) in operator requires a list of values")
 )
 
 var _ types.ConditionBuilder = &conditionBuilder{}
@@ -88,19 +82,15 @@ func (c *conditionBuilder) GetColumn(ctx context.Context, key types.TelemetryFie
 	case types.FieldContextLog:
 		col, ok := mainColumns[key.Name]
 		if !ok {
-			return nil, ErrColumnNotFound
+			return nil, types.ErrColumnNotFound
 		}
 		return col, nil
 	}
 
-	return nil, ErrColumnNotFound
+	return nil, types.ErrColumnNotFound
 }
 
-func keyToMaterializedColumnName(key types.TelemetryFieldKey) string {
-	return fmt.Sprintf("%s_%s_%s", key.FieldContext, key.FieldDataType.String(), strings.ReplaceAll(key.Name, ".", "$$"))
-}
-
-func (c *conditionBuilder) getFieldKeyName(ctx context.Context, key types.TelemetryFieldKey) (string, error) {
+func (c *conditionBuilder) getTableFieldName(ctx context.Context, key types.TelemetryFieldKey) (string, error) {
 	column, err := c.GetColumn(ctx, key)
 	if err != nil {
 		return "", err
@@ -119,7 +109,7 @@ func (c *conditionBuilder) getFieldKeyName(ctx context.Context, key types.Teleme
 	}:
 		// a key could have been materialized, if so return the materialized column name
 		if key.Materialized {
-			return keyToMaterializedColumnName(key), nil
+			return types.FieldKeyToMaterializedColumnName(key), nil
 		}
 		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
 	case schema.MapColumnType{
@@ -128,16 +118,16 @@ func (c *conditionBuilder) getFieldKeyName(ctx context.Context, key types.Teleme
 	}:
 		// a key could have been materialized, if so return the materialized column name
 		if key.Materialized {
-			return keyToMaterializedColumnName(key), nil
+			return types.FieldKeyToMaterializedColumnName(key), nil
 		}
 		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
 	case schema.MapColumnType{
 		KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
-		ValueType: schema.ColumnTypeUInt8,
+		ValueType: schema.ColumnTypeBool,
 	}:
 		// a key could have been materialized, if so return the materialized column name
 		if key.Materialized {
-			return keyToMaterializedColumnName(key), nil
+			return types.FieldKeyToMaterializedColumnName(key), nil
 		}
 		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
 	}
@@ -157,120 +147,83 @@ func (c *conditionBuilder) GetCondition(
 		return "", err
 	}
 
-	fieldKeyName, err := c.getFieldKeyName(ctx, key)
+	tblFieldName, err := c.getTableFieldName(ctx, key)
 	if err != nil {
 		return "", err
 	}
 
-	switch key.FieldDataType {
-	case types.FieldDataTypeString:
-		switch value.(type) {
-		case float64:
-			// try to convert the string value to to number
-			fieldKeyName = fmt.Sprintf(`toFloat64OrNull(%s)`, fieldKeyName)
-		case []any:
-			areFloats := true
-			for _, v := range value.([]any) {
-				if _, ok := v.(float64); !ok {
-					areFloats = false
-					break
-				}
-			}
-			if areFloats {
-				fieldKeyName = fmt.Sprintf(`toFloat64OrNull(%s)`, fieldKeyName)
-			}
-		case bool:
-			// we don't have a toBoolOrNull in ClickHouse, so we need to convert the bool to a string
-			value = fmt.Sprintf("%t", value)
-		case string:
-			// nothing to do
-		}
-	case types.FieldDataTypeFloat64, types.FieldDataTypeInt64, types.FieldDataTypeNumber:
-		switch value.(type) {
-		case string:
-			// try to convert the string value to to number
-			fieldKeyName = fmt.Sprintf(`toString(%s)`, fieldKeyName)
-		case float64:
-			// nothing to do
-		}
-	case types.FieldDataTypeBool:
-		switch value.(type) {
-		case string:
-			// try to convert the string value to to number
-			fieldKeyName = fmt.Sprintf(`toString(%s)`, fieldKeyName)
-		}
-	}
+	tblFieldName, value = types.DataTypeCollisionHandledFieldName(key, value, tblFieldName)
 
 	// regular operators
 	switch operator {
 	// regular operators
 	case types.FilterOperatorEqual:
-		return sb.E(fieldKeyName, value), nil
+		return sb.E(tblFieldName, value), nil
 	case types.FilterOperatorNotEqual:
-		return sb.NE(fieldKeyName, value), nil
+		return sb.NE(tblFieldName, value), nil
 	case types.FilterOperatorGreaterThan:
-		return sb.G(fieldKeyName, value), nil
+		return sb.G(tblFieldName, value), nil
 	case types.FilterOperatorGreaterThanOrEq:
-		return sb.GE(fieldKeyName, value), nil
+		return sb.GE(tblFieldName, value), nil
 	case types.FilterOperatorLessThan:
-		return sb.LT(fieldKeyName, value), nil
+		return sb.LT(tblFieldName, value), nil
 	case types.FilterOperatorLessThanOrEq:
-		return sb.LE(fieldKeyName, value), nil
+		return sb.LE(tblFieldName, value), nil
 
 	// like and not like
 	case types.FilterOperatorLike:
-		return sb.Like(fieldKeyName, value), nil
+		return sb.Like(tblFieldName, value), nil
 	case types.FilterOperatorNotLike:
-		return sb.NotLike(fieldKeyName, value), nil
+		return sb.NotLike(tblFieldName, value), nil
 	case types.FilterOperatorILike:
-		return sb.ILike(fieldKeyName, value), nil
+		return sb.ILike(tblFieldName, value), nil
 	case types.FilterOperatorNotILike:
-		return sb.NotILike(fieldKeyName, value), nil
+		return sb.NotILike(tblFieldName, value), nil
 
 	case types.FilterOperatorContains:
-		return sb.ILike(fieldKeyName, value), nil
+		return sb.ILike(tblFieldName, value), nil
 	case types.FilterOperatorNotContains:
-		return sb.NotILike(fieldKeyName, value), nil
+		return sb.NotILike(tblFieldName, value), nil
 
 	case types.FilterOperatorRegexp:
-		exp := fmt.Sprintf(`match(%s, %s)`, fieldKeyName, sb.Var(value))
+		exp := fmt.Sprintf(`match(%s, %s)`, tblFieldName, sb.Var(value))
 		return sb.And(exp), nil
 	case types.FilterOperatorNotRegexp:
-		exp := fmt.Sprintf(`not match(%s, %s)`, fieldKeyName, sb.Var(value))
+		exp := fmt.Sprintf(`not match(%s, %s)`, tblFieldName, sb.Var(value))
 		return sb.And(exp), nil
 	// between and not between
 	case types.FilterOperatorBetween:
 		values, ok := value.([]any)
 		if !ok {
-			return "", ErrBetweenValues
+			return "", types.ErrBetweenValues
 		}
 		if len(values) != 2 {
-			return "", ErrBetweenValues
+			return "", types.ErrBetweenValues
 		}
-		return sb.Between(fieldKeyName, values[0], values[1]), nil
+		return sb.Between(tblFieldName, values[0], values[1]), nil
 	case types.FilterOperatorNotBetween:
 		values, ok := value.([]any)
 		if !ok {
-			return "", ErrBetweenValues
+			return "", types.ErrBetweenValues
 		}
 		if len(values) != 2 {
-			return "", ErrBetweenValues
+			return "", types.ErrBetweenValues
 		}
-		return sb.NotBetween(fieldKeyName, values[0], values[1]), nil
+		return sb.NotBetween(tblFieldName, values[0], values[1]), nil
 
 	// in and not in
 	case types.FilterOperatorIn:
 		values, ok := value.([]any)
 		if !ok {
-			return "", ErrInValues
+			return "", types.ErrInValues
 		}
-		return sb.In(fieldKeyName, values...), nil
+		return sb.In(tblFieldName, values...), nil
 	case types.FilterOperatorNotIn:
 		values, ok := value.([]any)
 		if !ok {
-			return "", ErrInValues
+			return "", types.ErrInValues
 		}
-		return sb.NotIn(fieldKeyName, values...), nil
+		return sb.NotIn(tblFieldName, values...), nil
 
 	// exists and not exists
 	// but how could you live and have no story to tell
@@ -282,28 +235,31 @@ func (c *conditionBuilder) GetCondition(
 		case schema.ColumnTypeString, schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString}:
 			value = ""
 			if operator == types.FilterOperatorExists {
-				return sb.NE(fieldKeyName, value), nil
+				return sb.NE(tblFieldName, value), nil
 			} else {
-				return sb.E(fieldKeyName, value), nil
+				return sb.E(tblFieldName, value), nil
 			}
 		case schema.ColumnTypeUInt64, schema.ColumnTypeUInt32, schema.ColumnTypeUInt8:
 			value = 0
 			if operator == types.FilterOperatorExists {
-				return sb.NE(fieldKeyName, value), nil
+				return sb.NE(tblFieldName, value), nil
 			} else {
-				return sb.E(fieldKeyName, value), nil
+				return sb.E(tblFieldName, value), nil
 			}
 		case schema.MapColumnType{
 			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
 			ValueType: schema.ColumnTypeString,
 		}, schema.MapColumnType{
 			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
-			ValueType: schema.ColumnTypeUInt8,
+			ValueType: schema.ColumnTypeBool,
 		}, schema.MapColumnType{
 			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
-			ValueType: schema.ColumnTypeInt64,
+			ValueType: schema.ColumnTypeFloat64,
 		}:
 			leftOperand := fmt.Sprintf("mapContains(%s, '%s')", column.Name, key.Name)
+			if key.Materialized {
+				leftOperand = types.FieldKeyToMaterializedColumnNameForExists(key)
+			}
 			if operator == types.FilterOperatorExists {
 				return sb.E(leftOperand, true), nil
 			} else {

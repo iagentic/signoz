@@ -2,6 +2,7 @@ package types
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
@@ -24,6 +25,32 @@ func (s Signal) String() string {
 
 // FieldContext is the context of the field. It is expected to be used to disambiguate b/w
 // different contexts of the same field.
+//
+// - Use `resource.` prefix to the key to explicitly indicate and enforce resource context. Example
+//   - `resource.service.name`
+//   - `resource.k8s.namespace.name`
+//
+// - Use `scope.` prefix to explicitly indicate and enforce scope context. Example
+//   - `scope.name`
+//   - `scope.version`
+//   - `scope.my.custome.attribute` and `scope.attribute.my.custome.attribute` resolve to same attribute
+//
+// - Use `attribute.` to explicitly indicate and enforce attribute context. Example
+//   - `attribute.http.method`
+//   - `attribute.http.target`
+//
+// - Use `event.` to indicate and enforce event context and `event.attribute` to disambiguate b/w `event.name` and `event.attribute.name` . Examples
+//   - `event.name` will look for event name
+//   - `event.record_entry` will look for `record_entry` attribute in event
+//   - `event.attribute.name` will look for `name` attribute event
+//
+// - Use `span.` to indicate the span context.
+//   - `span.name` will resolve to the name of span
+//   - `span.kind` will resolve to the kind of span
+//   - `span.http.method` will resolve to `http.method` of attribute
+//
+// - Use `log.` for explicit log context
+//   - `log.severity_text` will always resolve to `severity_text` of log record
 type FieldContext string
 
 const (
@@ -42,6 +69,9 @@ func (f FieldContext) String() string {
 	return string(f)
 }
 
+// FieldContextToTagType converts the field context to the tag type.
+// We have historically used the term "tag" to refer to the {span/log/metric} attributes of the telemetry data.
+// Going forward, we will use the term "attribute" to refer to the {span/log/metric} attributes of the telemetry data.
 func FieldContextToTagType(f FieldContext) string {
 	switch f {
 	case FieldContextResource:
@@ -64,6 +94,7 @@ func FieldContextToTagType(f FieldContext) string {
 	return ""
 }
 
+// FieldContextFromString converts the string to the field context.
 func FieldContextFromString(s string) FieldContext {
 	switch s {
 	case "resource":
@@ -125,6 +156,8 @@ func FieldDataTypeFromString(s string) FieldDataType {
 	}
 }
 
+// FieldDataTypeToTagDataType converts the field data type to the tag data type.
+// This is used to convert the field data type to the tag data type for the telemetry data.
 func FieldDataTypeToTagDataType(f FieldDataType) string {
 	switch f {
 	case FieldDataTypeString:
@@ -138,11 +171,61 @@ func FieldDataTypeToTagDataType(f FieldDataType) string {
 	}
 }
 
-type FieldKeySelectorType string
+func DataTypeCollisionHandledFieldName(key TelemetryFieldKey, value any, tblFieldName string) (string, any) {
+	// This block of code exists to handle the data type collisions
+	// We don't want to fail the requests when there is a key with more than one data type
+	// Let's take an example of `http.status_code`, and consider user sent a string value and number value
+	// When they search for `http.status_code=200`, we will search across both the number columns and string columns
+	// and return the results from both the columns
+	// While we expect user not to send the mixed data types, it invetably happens
+	// So we handle the data type collisions here
+	switch key.FieldDataType {
+	case FieldDataTypeString:
+		switch value.(type) {
+		case float64:
+			// try to convert the string value to to number
+			tblFieldName = fmt.Sprintf(`toFloat64OrNull(%s)`, tblFieldName)
+		case []any:
+			areFloats := true
+			for _, v := range value.([]any) {
+				if _, ok := v.(float64); !ok {
+					areFloats = false
+					break
+				}
+			}
+			if areFloats {
+				tblFieldName = fmt.Sprintf(`toFloat64OrNull(%s)`, tblFieldName)
+			}
+		case bool:
+			// we don't have a toBoolOrNull in ClickHouse, so we need to convert the bool to a string
+			value = fmt.Sprintf("%t", value)
+		case string:
+			// nothing to do
+		}
+	case FieldDataTypeFloat64, FieldDataTypeInt64, FieldDataTypeNumber:
+		switch value.(type) {
+		case string:
+			// try to convert the string value to to number
+			tblFieldName = fmt.Sprintf(`toString(%s)`, tblFieldName)
+		case float64:
+			// nothing to do
+		}
+	case FieldDataTypeBool:
+		switch value.(type) {
+		case string:
+			// try to convert the string value to to number
+			tblFieldName = fmt.Sprintf(`toString(%s)`, tblFieldName)
+		}
+	}
+	return tblFieldName, value
+}
+
+// FieldKeySelectorMatchType is the match type of the field key selector.
+type FieldKeySelectorMatchType string
 
 const (
-	FieldKeySelectorTypeExact FieldKeySelectorType = "exact"
-	FieldKeySelectorTypeFuzzy FieldKeySelectorType = "fuzzy"
+	FieldKeySelectorMatchTypeExact FieldKeySelectorMatchType = "exact"
+	FieldKeySelectorMatchTypeFuzzy FieldKeySelectorMatchType = "fuzzy"
 )
 
 type TelemetryFieldKey struct {
@@ -155,6 +238,14 @@ type TelemetryFieldKey struct {
 	Materialized  bool          `json:"-"`
 }
 
+func FieldKeyToMaterializedColumnName(key TelemetryFieldKey) string {
+	return fmt.Sprintf("%s_%s_%s", key.FieldContext, key.FieldDataType.String(), strings.ReplaceAll(key.Name, ".", "$$"))
+}
+
+func FieldKeyToMaterializedColumnNameForExists(key TelemetryFieldKey) string {
+	return fmt.Sprintf("%s_%s_%s_exists", key.FieldContext, key.FieldDataType.String(), strings.ReplaceAll(key.Name, ".", "$$"))
+}
+
 type ExistingFieldSelection struct {
 	Key   TelemetryFieldKey `json:"key"`
 	Value any               `json:"value"`
@@ -165,22 +256,24 @@ type MetricContext struct {
 }
 
 type FieldKeySelector struct {
-	StartUnixMilli int64                `json:"startUnixMilli"`
-	EndUnixMilli   int64                `json:"endUnixMilli"`
-	Signal         Signal               `json:"signal"`
-	FieldContext   FieldContext         `json:"fieldContext"`
-	FieldDataType  FieldDataType        `json:"fieldDataType"`
-	Name           string               `json:"name"`
-	SelectorType   FieldKeySelectorType `json:"selectorType"`
-	Limit          int                  `json:"limit"`
-	MetricContext  *MetricContext       `json:"metricContext,omitempty"`
+	StartUnixMilli    int64                     `json:"startUnixMilli"`
+	EndUnixMilli      int64                     `json:"endUnixMilli"`
+	Signal            Signal                    `json:"signal"`
+	FieldContext      FieldContext              `json:"fieldContext"`
+	FieldDataType     FieldDataType             `json:"fieldDataType"`
+	Name              string                    `json:"name"`
+	SelectorMatchType FieldKeySelectorMatchType `json:"selectorMatchType"`
+	Limit             int                       `json:"limit"`
+	MetricContext     *MetricContext            `json:"metricContext,omitempty"`
 }
 
+// Metadata is the interface for the telemetry metadata.
 type Metadata interface {
-	// GetKeys returns a map of field keys by name, there can be multiple keys with the same name
+	// GetKeys returns a map of field keys types.TelemetryFieldKey by name, there can be multiple keys with the same name
 	// if they have different types or data types.
 	GetKeys(ctx context.Context, fieldKeySelector FieldKeySelector) (map[string][]TelemetryFieldKey, error)
 
+	// GetKeys but with any number of fieldKeySelectors.
 	GetKeysMulti(ctx context.Context, fieldKeySelectors []FieldKeySelector) (map[string][]TelemetryFieldKey, error)
 
 	// GetKey returns a list of keys with the given name.
@@ -194,7 +287,11 @@ type Metadata interface {
 	GetAllValues(ctx context.Context, fieldKeySelector FieldKeySelector) (any, error)
 }
 
+// ConditionBuilder is the interface for building the condition part of the query.
 type ConditionBuilder interface {
+	// GetColumn returns the column for the given key.
 	GetColumn(ctx context.Context, key TelemetryFieldKey) (*schema.Column, error)
+
+	// GetCondition returns the condition for the given key, operator and value.
 	GetCondition(ctx context.Context, key TelemetryFieldKey, operator FilterOperator, value any, sb *sqlbuilder.SelectBuilder) (string, error)
 }
