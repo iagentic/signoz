@@ -277,6 +277,18 @@ function QueryBuilderSearchV2(
 		},
 	);
 
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	const attributeValuesPayload = useMemo(() => attributeValues?.payload, [
+		attributeValues?.payload?.stringAttributeValues?.length,
+		attributeValues?.payload?.boolAttributeValues?.length,
+		attributeValues?.payload?.stringAttributeValues?.length,
+	]);
+
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	const attributeKeysPayload = useMemo(() => data?.payload?.attributeKeys, [
+		data?.payload?.attributeKeys?.length,
+	]);
+
 	const handleDropdownSelect = useCallback(
 		(value: string) => {
 			let parsedValue: BaseAutocompleteData | string;
@@ -700,7 +712,7 @@ function QueryBuilderSearchV2(
 				setDropdownOptions([
 					// Add user typed option if it doesn't exist in the payload
 					...(tagKey.trim().length > 0 &&
-					!data?.payload?.attributeKeys?.some((val) => val.key === tagKey)
+					!attributeKeysPayload?.some((val) => val.key === tagKey)
 						? [
 								{
 									label: tagKey,
@@ -715,7 +727,7 @@ function QueryBuilderSearchV2(
 						  ]
 						: []),
 					// Map existing attribute keys from payload
-					...(data?.payload?.attributeKeys?.map((key) => ({
+					...(attributeKeysPayload?.map((key) => ({
 						label: key.key,
 						value: key,
 					})) || []),
@@ -777,10 +789,10 @@ function QueryBuilderSearchV2(
 					values.push(tagValue[tagValue.length - 1]);
 			} else if (!isEmpty(tagValue)) values.push(tagValue);
 
-			if (attributeValues?.payload) {
+			if (attributeValuesPayload) {
 				const dataType = currentFilterItem?.key?.dataType || DataTypes.String;
 				const key = DATA_TYPE_VS_ATTRIBUTE_VALUES_KEY[dataType];
-				values.push(...(attributeValues?.payload?.[key] || []));
+				values.push(...(attributeValuesPayload?.[key] || []));
 			}
 
 			setDropdownOptions(
@@ -792,10 +804,10 @@ function QueryBuilderSearchV2(
 		}
 	}, [
 		hardcodedAttributeKeys,
-		attributeValues?.payload,
+		attributeValuesPayload,
 		currentFilterItem?.key?.dataType,
 		currentState,
-		data?.payload?.attributeKeys,
+		attributeKeysPayload,
 		isLogsDataSource,
 		searchValue,
 		suggestionsData?.payload?.attributes,
