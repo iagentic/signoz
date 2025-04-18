@@ -23,7 +23,8 @@ import (
 	"github.com/SigNoz/signoz/pkg/telemetrymetrics"
 	"github.com/SigNoz/signoz/pkg/telemetryspans"
 	"github.com/SigNoz/signoz/pkg/telemetrystore"
-	"github.com/SigNoz/signoz/pkg/types"
+	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
+	"github.com/SigNoz/signoz/pkg/valuer"
 
 	"github.com/SigNoz/signoz/pkg/query-service/cache"
 	"github.com/SigNoz/signoz/pkg/query-service/interfaces"
@@ -47,7 +48,7 @@ type querier struct {
 	keyGenerator   cache.KeyGenerator
 	queryCache     interfaces.QueryCache
 	telemetryStore telemetrystore.TelemetryStore
-	metadata       types.Metadata
+	metadata       telemetrytypes.MetadataStore
 
 	fluxInterval time.Duration
 
@@ -93,7 +94,7 @@ func NewQuerier(opts QuerierOptions) interfaces.Querier {
 
 	qc := querycache.NewQueryCache(querycache.WithCache(opts.Cache), querycache.WithFluxInterval(opts.FluxInterval))
 
-	telemetryMetadataStore, _ := telemetrymetadata.NewTelemetryMetaStore(
+	telemetryMetadataStore := telemetrymetadata.NewTelemetryMetaStore(
 		opts.TelemetryStore,
 		telemetryspans.DBName,
 		telemetryspans.TagAttributesV2TableName,
@@ -547,7 +548,7 @@ func (q *querier) runBuilderListQueries(ctx context.Context, params *v3.QueryRan
 
 func (q *querier) addFieldKeysToQuery(ctx context.Context, params *v3.QueryRangeParamsV3) {
 
-	keysSelectors := []types.FieldKeySelector{}
+	keysSelectors := []*telemetrytypes.FieldKeySelector{}
 	for _, v := range params.CompositeQuery.BuilderQueries {
 		queryKeysSelectors, err := parser.QueryStringToKeysSelectors(v.SearchExpr)
 		if err != nil {
@@ -555,7 +556,7 @@ func (q *querier) addFieldKeysToQuery(ctx context.Context, params *v3.QueryRange
 			continue
 		}
 		for idx := range queryKeysSelectors {
-			queryKeysSelectors[idx].Signal = types.Signal(v.DataSource)
+			queryKeysSelectors[idx].Signal = telemetrytypes.Signal{String: valuer.NewString(string(v.DataSource))}
 		}
 		keysSelectors = append(keysSelectors, queryKeysSelectors...)
 	}

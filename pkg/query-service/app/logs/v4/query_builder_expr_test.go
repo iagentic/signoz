@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
-	"github.com/SigNoz/signoz/pkg/types"
+	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 )
 
 func TestPrepareLogsQueryExpr(t *testing.T) {
@@ -58,12 +58,12 @@ func TestPrepareLogsQueryExpr(t *testing.T) {
 					OrderBy: []v3.OrderBy{
 						{ColumnName: "name", Order: "DESC"},
 					},
-					FieldKeys: map[string][]types.TelemetryFieldKey{
+					FieldKeys: map[string][]*telemetrytypes.TelemetryFieldKey{
 						"service.name": {
 							{
 								Name:          "service.name",
-								FieldContext:  types.FieldContextResource,
-								FieldDataType: types.FieldDataTypeString,
+								FieldContext:  telemetrytypes.FieldContextResource,
+								FieldDataType: telemetrytypes.FieldDataTypeString,
 							},
 						},
 					},

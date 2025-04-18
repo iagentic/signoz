@@ -11,7 +11,7 @@ import (
 	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
 	"github.com/SigNoz/signoz/pkg/query-service/utils"
 	"github.com/SigNoz/signoz/pkg/telemetrylogs"
-	"github.com/SigNoz/signoz/pkg/types"
+	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 )
 
 var logOperators = map[v3.FilterOperator]string{
@@ -368,14 +368,14 @@ func buildLogsQuery(panelType v3.PanelType, start, end, step int64, mq *v3.Build
 			return "", nil, err
 		}
 	} else {
-		filterSubQuery, args, err = parser.PrepareWhereClause(
+		filterSubQuery, args, _, err = parser.PrepareWhereClause(
 			mq.SearchExpr,
 			mq.FieldKeys,
 			telemetrylogs.NewConditionBuilder(),
-			types.TelemetryFieldKey{
+			telemetrytypes.TelemetryFieldKey{
 				Name:          "body",
-				FieldContext:  types.FieldContextLog,
-				FieldDataType: types.FieldDataTypeString,
+				FieldContext:  telemetrytypes.FieldContextLog,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
 			},
 		)
 		if err != nil {

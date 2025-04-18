@@ -10,8 +10,8 @@ import (
 	"github.com/SigNoz/signoz/pkg/query-service/constants"
 	v3 "github.com/SigNoz/signoz/pkg/query-service/model/v3"
 	"github.com/SigNoz/signoz/pkg/query-service/utils"
-	"github.com/SigNoz/signoz/pkg/telemetryspans"
-	"github.com/SigNoz/signoz/pkg/types"
+	"github.com/SigNoz/signoz/pkg/telemetrytraces"
+	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 )
 
 const NANOSECOND = 1000000000
@@ -261,11 +261,11 @@ func buildTracesQuery(start, end, step int64, mq *v3.BuilderQuery, panelType v3.
 			return "", nil, err
 		}
 	} else {
-		filterSubQuery, args, err = parser.PrepareWhereClause(
+		filterSubQuery, args, _, err = parser.PrepareWhereClause(
 			mq.SearchExpr,
 			mq.FieldKeys,
-			telemetryspans.NewConditionBuilder(),
-			types.TelemetryFieldKey{},
+			telemetrytraces.NewConditionBuilder(),
+			telemetrytypes.TelemetryFieldKey{},
 		)
 		if err != nil {
 			return "", nil, err

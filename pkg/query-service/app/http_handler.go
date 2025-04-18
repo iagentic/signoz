@@ -148,8 +148,6 @@ type APIHandler struct {
 	Signoz *signoz.SigNoz
 
 	Preference preference.API
-
-	FieldsResource *fields.FieldsResource
 }
 
 type APIHandlerOpts struct {
@@ -237,10 +235,6 @@ func NewAPIHandler(opts APIHandlerOpts) (*APIHandler, error) {
 	jobsRepo := inframetrics.NewJobsRepo(opts.Reader, querierv2)
 	pvcsRepo := inframetrics.NewPvcsRepo(opts.Reader, querierv2)
 	summaryService := metricsexplorer.NewSummaryService(opts.Reader, opts.RuleManager)
-	fieldsResource, err := fields.NewFieldsResource(opts.Signoz.TelemetryStore)
-	if err != nil {
-		return nil, err
-	}
 
 	aH := &APIHandler{
 		reader:                        opts.Reader,
@@ -506,13 +500,6 @@ func (aH *APIHandler) RegisterQueryRangeV4Routes(router *mux.Router, am *AuthMid
 	subRouter := router.PathPrefix("/api/v4").Subrouter()
 	subRouter.HandleFunc("/query_range", am.ViewAccess(aH.QueryRangeV4)).Methods(http.MethodPost)
 	subRouter.HandleFunc("/metric/metric_metadata", am.ViewAccess(aH.getMetricMetadata)).Methods(http.MethodGet)
-}
-
-func (aH *APIHandler) RegisterFieldsRoutes(router *mux.Router, am *AuthMiddleware) {
-	subRouter := router.PathPrefix("/api/v1").Subrouter()
-
-	subRouter.HandleFunc("/fields/keys", am.ViewAccess(aH.getFieldsKeys)).Methods(http.MethodGet)
-	subRouter.HandleFunc("/fields/values", am.ViewAccess(aH.getFieldsValues)).Methods(http.MethodGet)
 }
 
 // todo(remove): Implemented at render package (github.com/SigNoz/signoz/pkg/http/render) with the new error structure
