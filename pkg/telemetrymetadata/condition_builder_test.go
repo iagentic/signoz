@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
-	"github.com/SigNoz/signoz/pkg/types"
-	qbtypes "github.com/SigNoz/signoz/pkg/types/qbtypes/v5"
+	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
+	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 	"github.com/huandu/go-sqlbuilder"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,118 +18,118 @@ func TestGetColumn(t *testing.T) {
 
 	testCases := []struct {
 		name          string
-		key           types.TelemetryFieldKey
+		key           telemetrytypes.TelemetryFieldKey
 		expectedCol   *schema.Column
 		expectedError error
 	}{
 		{
 			name: "Resource field",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:         "service.name",
-				FieldContext: types.FieldContextResource,
+				FieldContext: telemetrytypes.FieldContextResource,
 			},
-			expectedCol:   mainColumns["resource_attributes"],
+			expectedCol:   attributeMetadataColumns["resource_attributes"],
 			expectedError: nil,
 		},
 		{
 			name: "Scope field - scope name",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:         "name",
-				FieldContext: types.FieldContextScope,
+				FieldContext: telemetrytypes.FieldContextScope,
 			},
 			expectedCol:   nil,
-			expectedError: types.ErrColumnNotFound,
+			expectedError: qbtypes.ErrColumnNotFound,
 		},
 		{
 			name: "Scope field - scope.name",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:         "scope.name",
-				FieldContext: types.FieldContextScope,
+				FieldContext: telemetrytypes.FieldContextScope,
 			},
 			expectedCol:   nil,
-			expectedError: types.ErrColumnNotFound,
+			expectedError: qbtypes.ErrColumnNotFound,
 		},
 		{
 			name: "Scope field - scope_name",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:         "scope_name",
-				FieldContext: types.FieldContextScope,
+				FieldContext: telemetrytypes.FieldContextScope,
 			},
 			expectedCol:   nil,
-			expectedError: types.ErrColumnNotFound,
+			expectedError: qbtypes.ErrColumnNotFound,
 		},
 		{
 			name: "Scope field - version",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:         "version",
-				FieldContext: types.FieldContextScope,
+				FieldContext: telemetrytypes.FieldContextScope,
 			},
 			expectedCol:   nil,
-			expectedError: types.ErrColumnNotFound,
+			expectedError: qbtypes.ErrColumnNotFound,
 		},
 		{
 			name: "Scope field - other scope field",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:         "custom.scope.field",
-				FieldContext: types.FieldContextScope,
+				FieldContext: telemetrytypes.FieldContextScope,
 			},
 			expectedCol:   nil,
-			expectedError: types.ErrColumnNotFound,
+			expectedError: qbtypes.ErrColumnNotFound,
 		},
 		{
 			name: "Attribute field - string type",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:          "user.id",
-				FieldContext:  types.FieldContextAttribute,
-				FieldDataType: types.FieldDataTypeString,
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
 			},
-			expectedCol:   mainColumns["attributes"],
+			expectedCol:   attributeMetadataColumns["attributes"],
 			expectedError: nil,
 		},
 		{
 			name: "Attribute field - number type",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:          "request.size",
-				FieldContext:  types.FieldContextAttribute,
-				FieldDataType: types.FieldDataTypeNumber,
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeNumber,
 			},
-			expectedCol:   mainColumns["attributes"],
+			expectedCol:   attributeMetadataColumns["attributes"],
 			expectedError: nil,
 		},
 		{
 			name: "Attribute field - int64 type",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:          "request.duration",
-				FieldContext:  types.FieldContextAttribute,
-				FieldDataType: types.FieldDataTypeInt64,
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeInt64,
 			},
-			expectedCol:   mainColumns["attributes"],
+			expectedCol:   attributeMetadataColumns["attributes"],
 			expectedError: nil,
 		},
 		{
 			name: "Attribute field - float64 type",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:          "cpu.utilization",
-				FieldContext:  types.FieldContextAttribute,
-				FieldDataType: types.FieldDataTypeFloat64,
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeFloat64,
 			},
-			expectedCol:   mainColumns["attributes"],
+			expectedCol:   attributeMetadataColumns["attributes"],
 			expectedError: nil,
 		},
 		{
 			name: "Log field - nonexistent",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:         "nonexistent_field",
-				FieldContext: types.FieldContextLog,
+				FieldContext: telemetrytypes.FieldContextLog,
 			},
 			expectedCol:   nil,
-			expectedError: types.ErrColumnNotFound,
+			expectedError: qbtypes.ErrColumnNotFound,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			col, err := conditionBuilder.GetColumn(ctx, tc.key)
+			col, err := conditionBuilder.GetColumn(ctx, &tc.key)
 
 			if tc.expectedError != nil {
 				assert.Equal(t, tc.expectedError, err)
@@ -147,63 +147,63 @@ func TestGetFieldKeyName(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		key            types.TelemetryFieldKey
+		key            telemetrytypes.TelemetryFieldKey
 		expectedResult string
 		expectedError  error
 	}{
 		{
 			name: "Map column type - string attribute",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:          "user.id",
-				FieldContext:  types.FieldContextAttribute,
-				FieldDataType: types.FieldDataTypeString,
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
 			},
 			expectedResult: "attributes['user.id']",
 			expectedError:  nil,
 		},
 		{
 			name: "Map column type - number attribute",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:          "request.size",
-				FieldContext:  types.FieldContextAttribute,
-				FieldDataType: types.FieldDataTypeNumber,
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeNumber,
 			},
 			expectedResult: "attributes['request.size']",
 			expectedError:  nil,
 		},
 		{
 			name: "Map column type - bool attribute",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:          "request.success",
-				FieldContext:  types.FieldContextAttribute,
-				FieldDataType: types.FieldDataTypeBool,
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeBool,
 			},
 			expectedResult: "attributes['request.success']",
 			expectedError:  nil,
 		},
 		{
 			name: "Map column type - resource attribute",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:         "service.name",
-				FieldContext: types.FieldContextResource,
+				FieldContext: telemetrytypes.FieldContextResource,
 			},
 			expectedResult: "resource_attributes['service.name']",
 			expectedError:  nil,
 		},
 		{
 			name: "Non-existent column",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:         "nonexistent_field",
-				FieldContext: types.FieldContextLog,
+				FieldContext: telemetrytypes.FieldContextLog,
 			},
 			expectedResult: "",
-			expectedError:  types.ErrColumnNotFound,
+			expectedError:  qbtypes.ErrColumnNotFound,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := conditionBuilder.GetTableFieldName(ctx, tc.key)
+			result, err := conditionBuilder.GetTableFieldName(ctx, &tc.key)
 
 			if tc.expectedError != nil {
 				assert.Equal(t, tc.expectedError, err)
@@ -221,7 +221,7 @@ func TestGetCondition(t *testing.T) {
 
 	testCases := []struct {
 		name          string
-		key           types.TelemetryFieldKey
+		key           telemetrytypes.TelemetryFieldKey
 		operator      qbtypes.FilterOperator
 		value         any
 		expectedSQL   string
@@ -230,10 +230,10 @@ func TestGetCondition(t *testing.T) {
 
 		{
 			name: "ILike operator - string attribute",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:          "user.id",
-				FieldContext:  types.FieldContextAttribute,
-				FieldDataType: types.FieldDataTypeString,
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
 			},
 			operator:      qbtypes.FilterOperatorILike,
 			value:         "%admin%",
@@ -242,10 +242,10 @@ func TestGetCondition(t *testing.T) {
 		},
 		{
 			name: "Not ILike operator - string attribute",
-			key: types.TelemetryFieldKey{
+			key: telemetrytypes.TelemetryFieldKey{
 				Name:          "user.id",
-				FieldContext:  types.FieldContextAttribute,
-				FieldDataType: types.FieldDataTypeString,
+				FieldContext:  telemetrytypes.FieldContextAttribute,
+				FieldDataType: telemetrytypes.FieldDataTypeString,
 			},
 			operator:      qbtypes.FilterOperatorNotILike,
 			value:         "%admin%",
@@ -257,7 +257,7 @@ func TestGetCondition(t *testing.T) {
 	for _, tc := range testCases {
 		sb := sqlbuilder.NewSelectBuilder()
 		t.Run(tc.name, func(t *testing.T) {
-			cond, err := conditionBuilder.GetCondition(ctx, tc.key, tc.operator, tc.value, sb)
+			cond, err := conditionBuilder.GetCondition(ctx, &tc.key, tc.operator, tc.value, sb)
 			sb.Where(cond)
 
 			if tc.expectedError != nil {

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/SigNoz/signoz/pkg/types"
+	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 )
 
 func TestExtractFieldKeysFromTblStatement(t *testing.T) {
@@ -33,14 +33,8 @@ func TestExtractFieldKeysFromTblStatement(t *testing.T) {
 		` + "`attribute_number_input_size_exists`" + ` Bool DEFAULT if(mapContains(attributes_number, 'input_size') != 0, true, false) CODEC(ZSTD(1)),
 		` + "`attribute_string_log$$iostream`" + ` String DEFAULT attributes_string['log.iostream'] CODEC(ZSTD(1)),
 		` + "`attribute_string_log$$iostream_exists`" + ` Bool DEFAULT if(mapContains(attributes_string, 'log.iostream') != 0, true, false) CODEC(ZSTD(1)),
-		` + "`attribute_number_finished_at_ts`" + ` Int64 DEFAULT attributes_number['finished_at_ts'] CODEC(ZSTD(1)),
-		` + "`attribute_number_finished_at_ts_exists`" + ` Bool DEFAULT if(mapContains(attributes_number, 'finished_at_ts') != 0, true, false) CODEC(ZSTD(1)),
-		` + "`attribute_string_email`" + ` String DEFAULT attributes_string['email'] CODEC(ZSTD(1)),
-		` + "`attribute_string_email_exists`" + ` Bool DEFAULT if(mapContains(attributes_string, 'email') != 0, true, false) CODEC(ZSTD(1)),
 		` + "`attribute_string_log$$file$$path`" + ` String DEFAULT attributes_string['log.file.path'] CODEC(ZSTD(1)),
 		` + "`attribute_string_log$$file$$path_exists`" + ` Bool DEFAULT if(mapContains(attributes_string, 'log.file.path') != 0, true, false) CODEC(ZSTD(1)),
-		` + "`attribute_string_organization`" + ` String DEFAULT attributes_string['organization'] CODEC(ZSTD(1)),
-		` + "`attribute_string_organization_exists`" + ` Bool DEFAULT if(mapContains(attributes_string, 'organization') != 0, true, false) CODEC(ZSTD(1)),
 		` + "`resource_string_k8s$$cluster$$name`" + ` String DEFAULT resources_string['k8s.cluster.name'] CODEC(ZSTD(1)),
 		` + "`resource_string_k8s$$cluster$$name_exists`" + ` Bool DEFAULT if(mapContains(resources_string, 'k8s.cluster.name') != 0, true, false) CODEC(ZSTD(1)),
 		` + "`resource_string_k8s$$namespace$$name`" + ` String DEFAULT resources_string['k8s.namespace.name'] CODEC(ZSTD(1)),
@@ -61,26 +55,6 @@ func TestExtractFieldKeysFromTblStatement(t *testing.T) {
 		INDEX severity_text_idx severity_text TYPE set(25) GRANULARITY 4,
 		INDEX trace_flags_idx trace_flags TYPE bloom_filter GRANULARITY 4,
 		INDEX scope_name_idx scope_name TYPE tokenbf_v1(10240, 3, 0) GRANULARITY 4,
-		INDEX attributes_string_idx_key mapKeys(attributes_string) TYPE tokenbf_v1(1024, 2, 0) GRANULARITY 1,
-		INDEX attributes_string_idx_val mapValues(attributes_string) TYPE ngrambf_v1(4, 5000, 2, 0) GRANULARITY 1,
-		INDEX attributes_int64_idx_key mapKeys(attributes_number) TYPE tokenbf_v1(1024, 2, 0) GRANULARITY 1,
-		INDEX attributes_int64_idx_val mapValues(attributes_number) TYPE bloom_filter GRANULARITY 1,
-		INDEX attributes_bool_idx_key mapKeys(attributes_bool) TYPE tokenbf_v1(1024, 2, 0) GRANULARITY 1,
-		INDEX attribute_number_input_size_idx attribute_number_input_size TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX ` + "`attribute_string_log$$iostream_idx`" + ` ` + "`attribute_string_log$$iostream`" + ` TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_number_finished_at_ts_idx attribute_number_finished_at_ts TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_string_ad_destination_idx attribute_string_ad_destination TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_number_hp_mr_idx attribute_number_hp_mr TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_string_destination_idx attribute_string_destination TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_string_finishedAt_idx attribute_string_finishedAt TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_string_finished_at_idx attribute_string_finished_at TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_string_hp_mr_str_idx attribute_string_hp_mr_str TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_number_sync_id_idx attribute_number_sync_id TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_string_organization_name_idx attribute_string_organization_name TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_string_email_idx attribute_string_email TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX ` + "`attribute_string_log$$file$$path_idx`" + ` ` + "`attribute_string_log$$file$$path`" + ` TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_string_organization_idx attribute_string_organization TYPE bloom_filter(0.01) GRANULARITY 64,
-		INDEX attribute_string_log_id_idx attribute_string_log_id TYPE bloom_filter(0.01) GRANULARITY 64,
 		INDEX ` + "`resource_string_k8s$$cluster$$name_idx`" + ` ` + "`resource_string_k8s$$cluster$$name`" + ` TYPE bloom_filter(0.01) GRANULARITY 64,
 		INDEX ` + "`resource_string_k8s$$namespace$$name_idx`" + ` ` + "`resource_string_k8s$$namespace$$name`" + ` TYPE bloom_filter(0.01) GRANULARITY 64,
 		INDEX ` + "`resource_string_k8s$$pod$$name_idx`" + ` ` + "`resource_string_k8s$$pod$$name`" + ` TYPE bloom_filter(0.01) GRANULARITY 64,
@@ -101,77 +75,73 @@ func TestExtractFieldKeysFromTblStatement(t *testing.T) {
 	}
 
 	// some expected keys
-	expectedKeys := []types.TelemetryFieldKey{
+	expectedKeys := []*telemetrytypes.TelemetryFieldKey{
 		{
 			Name:          "k8s.pod.name",
-			FieldContext:  types.FieldContextResource,
-			FieldDataType: types.FieldDataTypeString,
+			FieldContext:  telemetrytypes.FieldContextResource,
+			FieldDataType: telemetrytypes.FieldDataTypeString,
 			Materialized:  true,
 		},
 		{
 			Name:          "k8s.cluster.name",
-			FieldContext:  types.FieldContextResource,
-			FieldDataType: types.FieldDataTypeString,
+			FieldContext:  telemetrytypes.FieldContextResource,
+			FieldDataType: telemetrytypes.FieldDataTypeString,
 			Materialized:  true,
 		},
 		{
 			Name:          "k8s.namespace.name",
-			FieldContext:  types.FieldContextResource,
-			FieldDataType: types.FieldDataTypeString,
+			FieldContext:  telemetrytypes.FieldContextResource,
+			FieldDataType: telemetrytypes.FieldDataTypeString,
 			Materialized:  true,
 		},
 		{
 			Name:          "k8s.deployment.name",
-			FieldContext:  types.FieldContextResource,
-			FieldDataType: types.FieldDataTypeString,
+			FieldContext:  telemetrytypes.FieldContextResource,
+			FieldDataType: telemetrytypes.FieldDataTypeString,
 			Materialized:  true,
 		},
 		{
 			Name:          "k8s.node.name",
-			FieldContext:  types.FieldContextResource,
-			FieldDataType: types.FieldDataTypeString,
+			FieldContext:  telemetrytypes.FieldContextResource,
+			FieldDataType: telemetrytypes.FieldDataTypeString,
 			Materialized:  true,
 		},
 		{
 			Name:          "k8s.container.name",
-			FieldContext:  types.FieldContextResource,
-			FieldDataType: types.FieldDataTypeString,
+			FieldContext:  telemetrytypes.FieldContextResource,
+			FieldDataType: telemetrytypes.FieldDataTypeString,
 			Materialized:  true,
 		},
 		{
 			Name:          "processor",
-			FieldContext:  types.FieldContextAttribute,
-			FieldDataType: types.FieldDataTypeString,
+			FieldContext:  telemetrytypes.FieldContextAttribute,
+			FieldDataType: telemetrytypes.FieldDataTypeString,
 			Materialized:  true,
 		},
 		{
 			Name:          "input_size",
-			FieldContext:  types.FieldContextAttribute,
-			FieldDataType: types.FieldDataTypeFloat64,
-			Materialized:  true,
-		},
-		{
-			Name:          "finished_at_ts",
-			FieldContext:  types.FieldContextAttribute,
-			FieldDataType: types.FieldDataTypeFloat64,
+			FieldContext:  telemetrytypes.FieldContextAttribute,
+			FieldDataType: telemetrytypes.FieldDataTypeFloat64,
 			Materialized:  true,
 		},
 		{
 			Name:          "log.iostream",
-			FieldContext:  types.FieldContextAttribute,
-			FieldDataType: types.FieldDataTypeString,
+			FieldContext:  telemetrytypes.FieldContextAttribute,
+			FieldDataType: telemetrytypes.FieldDataTypeString,
 			Materialized:  true,
 		},
 		{
 			Name:          "log.file.path",
-			FieldContext:  types.FieldContextAttribute,
-			FieldDataType: types.FieldDataTypeString,
+			FieldContext:  telemetrytypes.FieldContextAttribute,
+			FieldDataType: telemetrytypes.FieldDataTypeString,
 			Materialized:  true,
 		},
 	}
 
 	for _, key := range expectedKeys {
-		if !slices.Contains(keys, key) {
+		if !slices.ContainsFunc(keys, func(k *telemetrytypes.TelemetryFieldKey) bool {
+			return k.Name == key.Name && k.FieldContext == key.FieldContext && k.FieldDataType == key.FieldDataType && k.Materialized == key.Materialized
+		}) {
 			t.Errorf("expected key %v not found", key)
 		}
 	}

@@ -5,13 +5,13 @@ import (
 	"fmt"
 
 	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
-	"github.com/SigNoz/signoz/pkg/types"
-	qbtypes "github.com/SigNoz/signoz/pkg/types/qbtypes/v5"
+	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
+	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 	"github.com/huandu/go-sqlbuilder"
 )
 
 var (
-	mainColumns = map[string]*schema.Column{
+	attributeMetadataColumns = map[string]*schema.Column{
 		"resource_attributes": {Name: "resource_attributes", Type: schema.MapColumnType{
 			KeyType:   schema.LowCardinalityColumnType{ElementType: schema.ColumnTypeString},
 			ValueType: schema.ColumnTypeString,
@@ -26,21 +26,21 @@ var (
 type conditionBuilder struct {
 }
 
-func NewConditionBuilder() types.ConditionBuilder {
+func NewConditionBuilder() qbtypes.ConditionBuilder {
 	return &conditionBuilder{}
 }
 
-func (c *conditionBuilder) GetColumn(ctx context.Context, key types.TelemetryFieldKey) (*schema.Column, error) {
+func (c *conditionBuilder) GetColumn(ctx context.Context, key *telemetrytypes.TelemetryFieldKey) (*schema.Column, error) {
 	switch key.FieldContext {
-	case types.FieldContextResource:
-		return mainColumns["resource_attributes"], nil
-	case types.FieldContextAttribute:
-		return mainColumns["attributes"], nil
+	case telemetrytypes.FieldContextResource:
+		return attributeMetadataColumns["resource_attributes"], nil
+	case telemetrytypes.FieldContextAttribute:
+		return attributeMetadataColumns["attributes"], nil
 	}
-	return nil, types.ErrColumnNotFound
+	return nil, qbtypes.ErrColumnNotFound
 }
 
-func (c *conditionBuilder) GetTableFieldName(ctx context.Context, key types.TelemetryFieldKey) (string, error) {
+func (c *conditionBuilder) GetTableFieldName(ctx context.Context, key *telemetrytypes.TelemetryFieldKey) (string, error) {
 	column, err := c.GetColumn(ctx, key)
 	if err != nil {
 		return "", err
@@ -58,7 +58,7 @@ func (c *conditionBuilder) GetTableFieldName(ctx context.Context, key types.Tele
 
 func (c *conditionBuilder) GetCondition(
 	ctx context.Context,
-	key types.TelemetryFieldKey,
+	key *telemetrytypes.TelemetryFieldKey,
 	operator qbtypes.FilterOperator,
 	value any,
 	sb *sqlbuilder.SelectBuilder,
@@ -75,7 +75,7 @@ func (c *conditionBuilder) GetCondition(
 		return "", nil
 	}
 
-	if key.FieldDataType != types.FieldDataTypeString {
+	if key.FieldDataType != telemetrytypes.FieldDataTypeString {
 		// if the field data type is not string, we can't build a condition for related values
 		return "", nil
 	}
@@ -102,9 +102,9 @@ func (c *conditionBuilder) GetCondition(
 		return sb.And(containsExp, sb.NotILike(tblFieldName, value)), nil
 
 	case qbtypes.FilterOperatorContains:
-		return sb.And(containsExp, sb.ILike(tblFieldName, value)), nil
+		return sb.And(containsExp, sb.ILike(tblFieldName, fmt.Sprintf("%%%s%%", value))), nil
 	case qbtypes.FilterOperatorNotContains:
-		return sb.And(containsExp, sb.NotILike(tblFieldName, value)), nil
+		return sb.And(containsExp, sb.NotILike(tblFieldName, fmt.Sprintf("%%%s%%", value))), nil
 
 	case qbtypes.FilterOperatorRegexp:
 		exp := fmt.Sprintf(`match(%s, %s)`, tblFieldName, sb.Var(value))
@@ -117,13 +117,13 @@ func (c *conditionBuilder) GetCondition(
 	case qbtypes.FilterOperatorIn:
 		values, ok := value.([]any)
 		if !ok {
-			return "", types.ErrInValues
+			return "", qbtypes.ErrInValues
 		}
 		return sb.And(containsExp, sb.In(tblFieldName, values...)), nil
 	case qbtypes.FilterOperatorNotIn:
 		values, ok := value.([]any)
 		if !ok {
-			return "", types.ErrInValues
+			return "", qbtypes.ErrInValues
 		}
 		return sb.And(containsExp, sb.NotIn(tblFieldName, values...)), nil
 

@@ -104,7 +104,7 @@ fullText
  *    ...
  */
 functionCall
-    : (HAS | HASANY | HASALL | HASNONE) LPAREN functionParamList RPAREN
+    : (HAS | HASANY | HASALL) LPAREN functionParamList RPAREN
     ;
 
 // Function parameters can be keys, single scalar values, or arrays
@@ -182,7 +182,6 @@ OR          : [Oo][Rr] ;
 HAS         : [Hh][Aa][Ss] ;
 HASANY      : [Hh][Aa][Ss][Aa][Nn][Yy] ;
 HASALL      : [Hh][Aa][Ss][Aa][Ll][Ll] ;
-HASNONE     : [Hh][Aa][Ss][Nn][Oo][Nn][Ee] ;
 
 // Potential boolean constants
 BOOL
@@ -196,7 +195,6 @@ NUMBER
     ;
 
 // Double/single-quoted text, capturing full text search strings, values, etc.
-// In real usage, you might want more robust escapes: (\\.)? inside
 QUOTED_TEXT
     :  (   '"' ( ~["\\] | '\\' . )* '"'     // double-quoted
         |   '\'' ( ~['\\] | '\\' . )* '\'' // single-quoted
@@ -206,7 +204,7 @@ QUOTED_TEXT
 // Keys can have letters, digits, underscores, dots, and bracket pairs
 // e.g. service.name, service.namespace, db.queries[].query_duration
 KEY
-    : [a-zA-Z0-9_] [a-zA-Z0-9_.[\]]*
+    : [a-zA-Z0-9_] [a-zA-Z0-9_.*[\]]*
     ;
 
 // Ignore whitespace
@@ -219,4 +217,4 @@ fragment DIGIT
     : [0-9]
     ;
 
-FREETEXT : (~[ \t\r\n=()'"<>![\]])+ ;
+FREETEXT : (~[ \t\r\n=()'"<>!,[\]])+ ;

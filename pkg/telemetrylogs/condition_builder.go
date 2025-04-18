@@ -3,15 +3,19 @@ package telemetrylogs
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	schema "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
-	"github.com/SigNoz/signoz/pkg/types"
-	qbtypes "github.com/SigNoz/signoz/pkg/types/qbtypes/v5"
+	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
+	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
+	"github.com/SigNoz/signoz/pkg/valuer"
+
 	"github.com/huandu/go-sqlbuilder"
 )
 
 var (
-	mainColumns = map[string]*schema.Column{
+	logsV2Columns = map[string]*schema.Column{
 		"ts_bucket_start":      {Name: "ts_bucket_start", Type: schema.ColumnTypeUInt64},
 		"resource_fingerprint": {Name: "resource_fingerprint", Type: schema.ColumnTypeString},
 
@@ -49,49 +53,53 @@ var (
 	}
 )
 
-var _ types.ConditionBuilder = &conditionBuilder{}
+var _ qbtypes.ConditionBuilder = &conditionBuilder{}
 
 type conditionBuilder struct {
 }
 
-func NewConditionBuilder() types.ConditionBuilder {
+func NewConditionBuilder() qbtypes.ConditionBuilder {
 	return &conditionBuilder{}
 }
 
-func (c *conditionBuilder) GetColumn(ctx context.Context, key types.TelemetryFieldKey) (*schema.Column, error) {
+func (c *conditionBuilder) GetColumn(ctx context.Context, key *telemetrytypes.TelemetryFieldKey) (*schema.Column, error) {
 
 	switch key.FieldContext {
-	case types.FieldContextResource:
-		return mainColumns["resources_string"], nil
-	case types.FieldContextScope:
+	case telemetrytypes.FieldContextResource:
+		return logsV2Columns["resources_string"], nil
+	case telemetrytypes.FieldContextScope:
 		switch key.Name {
 		case "name", "scope.name", "scope_name":
-			return mainColumns["scope_name"], nil
+			return logsV2Columns["scope_name"], nil
 		case "version", "scope.version", "scope_version":
-			return mainColumns["scope_version"], nil
+			return logsV2Columns["scope_version"], nil
 		}
-		return mainColumns["scope_string"], nil
-	case types.FieldContextAttribute:
+		return logsV2Columns["scope_string"], nil
+	case telemetrytypes.FieldContextAttribute:
 		switch key.FieldDataType {
-		case types.FieldDataTypeString:
-			return mainColumns["attributes_string"], nil
-		case types.FieldDataTypeInt64, types.FieldDataTypeFloat64, types.FieldDataTypeNumber:
-			return mainColumns["attributes_number"], nil
-		case types.FieldDataTypeBool:
-			return mainColumns["attributes_bool"], nil
+		case telemetrytypes.FieldDataTypeString:
+			return logsV2Columns["attributes_string"], nil
+		case telemetrytypes.FieldDataTypeInt64, telemetrytypes.FieldDataTypeFloat64, telemetrytypes.FieldDataTypeNumber:
+			return logsV2Columns["attributes_number"], nil
+		case telemetrytypes.FieldDataTypeBool:
+			return logsV2Columns["attributes_bool"], nil
 		}
-	case types.FieldContextLog:
-		col, ok := mainColumns[key.Name]
+	case telemetrytypes.FieldContextLog, telemetrytypes.FieldContextUnspecified:
+		col, ok := logsV2Columns[key.Name]
 		if !ok {
-			return nil, types.ErrColumnNotFound
+			// check if the key has body JSON search
+			if strings.HasPrefix(key.Name, BodyJSONStringSearchPrefix) {
+				return logsV2Columns["body"], nil
+			}
+			return nil, qbtypes.ErrColumnNotFound
 		}
 		return col, nil
 	}
 
-	return nil, types.ErrColumnNotFound
+	return nil, qbtypes.ErrColumnNotFound
 }
 
-func (c *conditionBuilder) GetTableFieldName(ctx context.Context, key types.TelemetryFieldKey) (string, error) {
+func (c *conditionBuilder) GetTableFieldName(ctx context.Context, key *telemetrytypes.TelemetryFieldKey) (string, error) {
 	column, err := c.GetColumn(ctx, key)
 	if err != nil {
 		return "", err
@@ -110,7 +118,7 @@ func (c *conditionBuilder) GetTableFieldName(ctx context.Context, key types.Tele
 	}:
 		// a key could have been materialized, if so return the materialized column name
 		if key.Materialized {
-			return types.FieldKeyToMaterializedColumnName(key), nil
+			return telemetrytypes.FieldKeyToMaterializedColumnName(key), nil
 		}
 		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
 	case schema.MapColumnType{
@@ -119,7 +127,7 @@ func (c *conditionBuilder) GetTableFieldName(ctx context.Context, key types.Tele
 	}:
 		// a key could have been materialized, if so return the materialized column name
 		if key.Materialized {
-			return types.FieldKeyToMaterializedColumnName(key), nil
+			return telemetrytypes.FieldKeyToMaterializedColumnName(key), nil
 		}
 		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
 	case schema.MapColumnType{
@@ -128,7 +136,7 @@ func (c *conditionBuilder) GetTableFieldName(ctx context.Context, key types.Tele
 	}:
 		// a key could have been materialized, if so return the materialized column name
 		if key.Materialized {
-			return types.FieldKeyToMaterializedColumnName(key), nil
+			return telemetrytypes.FieldKeyToMaterializedColumnName(key), nil
 		}
 		return fmt.Sprintf("%s['%s']", column.Name, key.Name), nil
 	}
@@ -136,9 +144,86 @@ func (c *conditionBuilder) GetTableFieldName(ctx context.Context, key types.Tele
 	return column.Name, nil
 }
 
+func parseStrValue(valueStr string, operator qbtypes.FilterOperator) (telemetrytypes.FieldDataType, any) {
+
+	valueType := telemetrytypes.FieldDataTypeString
+
+	// return the value as is for the following operators
+	// as they are always string
+	if operator == qbtypes.FilterOperatorContains || operator == qbtypes.FilterOperatorNotContains ||
+		operator == qbtypes.FilterOperatorRegexp || operator == qbtypes.FilterOperatorNotRegexp ||
+		operator == qbtypes.FilterOperatorLike || operator == qbtypes.FilterOperatorNotLike ||
+		operator == qbtypes.FilterOperatorILike || operator == qbtypes.FilterOperatorNotILike {
+		return valueType, valueStr
+	}
+
+	var err error
+	var parsedValue any
+	if parsedValue, err = strconv.ParseBool(valueStr); err == nil {
+		valueType = telemetrytypes.FieldDataTypeBool
+	} else if parsedValue, err = strconv.ParseInt(valueStr, 10, 64); err == nil {
+		valueType = telemetrytypes.FieldDataTypeInt64
+	} else if parsedValue, err = strconv.ParseFloat(valueStr, 64); err == nil {
+		valueType = telemetrytypes.FieldDataTypeFloat64
+	} else {
+		parsedValue = valueStr
+		valueType = telemetrytypes.FieldDataTypeString
+	}
+
+	return valueType, parsedValue
+}
+
+func inferDataType(value any, operator qbtypes.FilterOperator, key *telemetrytypes.TelemetryFieldKey) (telemetrytypes.FieldDataType, any) {
+	// check if the value is a int, float, string, bool
+	valueType := telemetrytypes.FieldDataTypeUnspecified
+	switch v := value.(type) {
+	case []any:
+		// take the first element and infer the type
+		if len(v) > 0 {
+			valueType, _ = inferDataType(v[0], operator, key)
+		}
+		return valueType, v
+	case uint8, uint16, uint32, uint64, int, int8, int16, int32, int64:
+		valueType = telemetrytypes.FieldDataTypeInt64
+	case float32, float64:
+		valueType = telemetrytypes.FieldDataTypeFloat64
+	case string:
+		valueType, value = parseStrValue(v, operator)
+	case bool:
+		valueType = telemetrytypes.FieldDataTypeBool
+	}
+
+	// check if it is array
+	if strings.HasSuffix(key.Name, "[*]") {
+		valueType = telemetrytypes.FieldDataType{String: valuer.NewString(fmt.Sprintf("[]%s", valueType.StringValue()))}
+	}
+
+	return valueType, value
+}
+
+func GetBodyJSONKey(_ context.Context, key *telemetrytypes.TelemetryFieldKey, operator qbtypes.FilterOperator, value any) (string, any) {
+
+	dataType, value := inferDataType(value, operator, key)
+
+	// all body json keys are of the form body.
+	path := strings.Join(strings.Split(key.Name, ".")[1:], ".")
+
+	// for array types, we need to extract the value from the JSON_QUERY
+	if dataType == telemetrytypes.FieldDataTypeArrayInt64 ||
+		dataType == telemetrytypes.FieldDataTypeArrayFloat64 ||
+		dataType == telemetrytypes.FieldDataTypeArrayString ||
+		dataType == telemetrytypes.FieldDataTypeArrayBool ||
+		dataType == telemetrytypes.FieldDataTypeArrayNumber {
+		return fmt.Sprintf("JSONExtract(JSON_QUERY(body, '$.%s'), '%s')", path, dataType.CHDataType()), value
+	}
+
+	// for all other types, we need to extract the value from the JSON_VALUE
+	return fmt.Sprintf("JSONExtract(JSON_VALUE(body, '$.%s'), '%s')", path, dataType.CHDataType()), value
+}
+
 func (c *conditionBuilder) GetCondition(
 	ctx context.Context,
-	key types.TelemetryFieldKey,
+	key *telemetrytypes.TelemetryFieldKey,
 	operator qbtypes.FilterOperator,
 	value any,
 	sb *sqlbuilder.SelectBuilder,
@@ -153,7 +238,11 @@ func (c *conditionBuilder) GetCondition(
 		return "", err
 	}
 
-	tblFieldName, value = types.DataTypeCollisionHandledFieldName(key, value, tblFieldName)
+	if strings.HasPrefix(key.Name, BodyJSONStringSearchPrefix) {
+		tblFieldName, value = GetBodyJSONKey(ctx, key, operator, value)
+	}
+
+	tblFieldName, value = telemetrytypes.DataTypeCollisionHandledFieldName(key, value, tblFieldName)
 
 	// regular operators
 	switch operator {
@@ -182,9 +271,9 @@ func (c *conditionBuilder) GetCondition(
 		return sb.NotILike(tblFieldName, value), nil
 
 	case qbtypes.FilterOperatorContains:
-		return sb.ILike(tblFieldName, value), nil
+		return sb.ILike(tblFieldName, fmt.Sprintf("%%%s%%", value)), nil
 	case qbtypes.FilterOperatorNotContains:
-		return sb.NotILike(tblFieldName, value), nil
+		return sb.NotILike(tblFieldName, fmt.Sprintf("%%%s%%", value)), nil
 
 	case qbtypes.FilterOperatorRegexp:
 		exp := fmt.Sprintf(`match(%s, %s)`, tblFieldName, sb.Var(value))
@@ -196,19 +285,19 @@ func (c *conditionBuilder) GetCondition(
 	case qbtypes.FilterOperatorBetween:
 		values, ok := value.([]any)
 		if !ok {
-			return "", types.ErrBetweenValues
+			return "", qbtypes.ErrBetweenValues
 		}
 		if len(values) != 2 {
-			return "", types.ErrBetweenValues
+			return "", qbtypes.ErrBetweenValues
 		}
 		return sb.Between(tblFieldName, values[0], values[1]), nil
 	case qbtypes.FilterOperatorNotBetween:
 		values, ok := value.([]any)
 		if !ok {
-			return "", types.ErrBetweenValues
+			return "", qbtypes.ErrBetweenValues
 		}
 		if len(values) != 2 {
-			return "", types.ErrBetweenValues
+			return "", qbtypes.ErrBetweenValues
 		}
 		return sb.NotBetween(tblFieldName, values[0], values[1]), nil
 
@@ -216,13 +305,13 @@ func (c *conditionBuilder) GetCondition(
 	case qbtypes.FilterOperatorIn:
 		values, ok := value.([]any)
 		if !ok {
-			return "", types.ErrInValues
+			return "", qbtypes.ErrInValues
 		}
 		return sb.In(tblFieldName, values...), nil
 	case qbtypes.FilterOperatorNotIn:
 		values, ok := value.([]any)
 		if !ok {
-			return "", types.ErrInValues
+			return "", qbtypes.ErrInValues
 		}
 		return sb.NotIn(tblFieldName, values...), nil
 
@@ -259,7 +348,7 @@ func (c *conditionBuilder) GetCondition(
 		}:
 			leftOperand := fmt.Sprintf("mapContains(%s, '%s')", column.Name, key.Name)
 			if key.Materialized {
-				leftOperand = types.FieldKeyToMaterializedColumnNameForExists(key)
+				leftOperand = telemetrytypes.FieldKeyToMaterializedColumnNameForExists(key)
 			}
 			if operator == qbtypes.FilterOperatorExists {
 				return sb.E(leftOperand, true), nil
@@ -270,5 +359,5 @@ func (c *conditionBuilder) GetCondition(
 			return "", fmt.Errorf("exists operator is not supported for column type %s", column.Type)
 		}
 	}
-	return "", nil
+	return "", fmt.Errorf("unsupported operator: %v", operator)
 }

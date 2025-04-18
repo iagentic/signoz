@@ -6,20 +6,14 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	baseconst "github.com/SigNoz/signoz/pkg/query-service/constants"
-	"github.com/SigNoz/signoz/pkg/types"
+	"github.com/SigNoz/signoz/pkg/telemetrylogs"
+	"github.com/SigNoz/signoz/pkg/telemetrymetrics"
+	"github.com/SigNoz/signoz/pkg/telemetrystore"
+	"github.com/SigNoz/signoz/pkg/telemetrystore/telemetrystoretest"
+	"github.com/SigNoz/signoz/pkg/telemetrytraces"
+	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 	cmock "github.com/srikanthccv/ClickHouse-go-mock"
 )
-
-type MockTelemetryStore struct {
-	conn driver.Conn
-}
-
-func (m *MockTelemetryStore) ClickhouseDB() clickhouse.Conn {
-	return m.conn
-}
 
 type regexMatcher struct {
 }
@@ -36,31 +30,23 @@ func (m *regexMatcher) Match(expectedSQL, actualSQL string) error {
 }
 
 func TestGetKeys(t *testing.T) {
-	mockTelemetryStore := &MockTelemetryStore{}
-	mock, err := cmock.NewClickHouseWithQueryMatcher(nil, &regexMatcher{})
-	if err != nil {
-		t.Fatalf("Failed to create mock ClickHouse: %v", err)
-	}
-	mockTelemetryStore.conn = mock
+	mockTelemetryStore := telemetrystoretest.New(telemetrystore.Config{}, &regexMatcher{})
+	mock := mockTelemetryStore.Mock()
 
-	metadata, err := NewTelemetryMetaStore(
+	metadata := NewTelemetryMetaStore(
 		mockTelemetryStore,
-		baseconst.SIGNOZ_TRACE_DBNAME,
-		baseconst.SIGNOZ_TAG_ATTRIBUTES_V2_TABLENAME,
-		baseconst.SIGNOZ_SPAN_INDEX_V3,
-		baseconst.SIGNOZ_METRIC_DBNAME,
-		baseconst.SIGNOZ_TIMESERIES_v4_1DAY_TABLENAME,
-		baseconst.SIGNOZ_TIMESERIES_v4_1DAY_TABLENAME,
-		baseconst.SIGNOZ_LOG_DBNAME,
-		baseconst.SIGNOZ_LOG_V2_TABLENAME,
-		baseconst.SIGNOZ_TAG_ATTRIBUTES_V2_TABLENAME,
-		baseconst.SIGNOZ_METADATA_DBNAME,
-		baseconst.SIGNOZ_ATTRIBUTES_METADATA_LOCAL_TABLENAME,
+		telemetrytraces.DBName,
+		telemetrytraces.TagAttributesV2TableName,
+		telemetrytraces.SpanIndexV3TableName,
+		telemetrymetrics.DBName,
+		telemetrymetrics.TimeseriesV41weekTableName,
+		telemetrymetrics.TimeseriesV41weekTableName,
+		telemetrylogs.DBName,
+		telemetrylogs.LogsV2TableName,
+		telemetrylogs.TagAttributesV2TableName,
+		DBName,
+		AttributesMetadataLocalTableName,
 	)
-
-	if err != nil {
-		t.Fatalf("Failed to create telemetry metadata store: %v", err)
-	}
 
 	rows := cmock.NewRows([]cmock.ColumnType{
 		{Name: "statement", Type: "String"},
@@ -73,17 +59,17 @@ func TestGetKeys(t *testing.T) {
 	query := `SELECT.*`
 
 	mock.ExpectQuery(query).
-		WithArgs("%http.method%", types.FieldContextToTagType(types.FieldContextSpan), types.FieldDataTypeToTagDataType(types.FieldDataTypeString), 10).
+		WithArgs("%http.method%", telemetrytypes.FieldContextSpan.TagType(), telemetrytypes.FieldDataTypeString.TagDataType(), 10).
 		WillReturnRows(cmock.NewRows([]cmock.ColumnType{
 			{Name: "tag_key", Type: "String"},
 			{Name: "tag_type", Type: "String"},
 			{Name: "tag_data_type", Type: "String"},
 			{Name: "priority", Type: "UInt8"},
 		}, [][]any{{"http.method", "tag", "String", 1}, {"http.method", "tag", "String", 1}}))
-	keys, err := metadata.GetKeys(context.Background(), types.FieldKeySelector{
-		Signal:        types.SignalTraces,
-		FieldContext:  types.FieldContextSpan,
-		FieldDataType: types.FieldDataTypeString,
+	keys, err := metadata.GetKeys(context.Background(), &telemetrytypes.FieldKeySelector{
+		Signal:        telemetrytypes.SignalTraces,
+		FieldContext:  telemetrytypes.FieldContextSpan,
+		FieldDataType: telemetrytypes.FieldDataTypeString,
 		Name:          "http.method",
 		Limit:         10,
 	})

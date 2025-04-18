@@ -4,18 +4,18 @@ import (
 	"strings"
 
 	"github.com/AfterShip/clickhouse-sql-parser/parser"
-	"github.com/SigNoz/signoz/pkg/types"
+	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 )
 
 // TelemetryFieldVisitor is an AST visitor for extracting telemetry fields
 type TelemetryFieldVisitor struct {
 	parser.DefaultASTVisitor
-	Fields []types.TelemetryFieldKey
+	Fields []*telemetrytypes.TelemetryFieldKey
 }
 
 func NewTelemetryFieldVisitor() *TelemetryFieldVisitor {
 	return &TelemetryFieldVisitor{
-		Fields: make([]types.TelemetryFieldKey, 0),
+		Fields: make([]*telemetrytypes.TelemetryFieldKey, 0),
 	}
 }
 
@@ -43,31 +43,31 @@ func (v *TelemetryFieldVisitor) VisitColumnDef(expr *parser.ColumnDef) error {
 	dataType := parts[1]
 
 	// Check if this is a valid telemetry column
-	var fieldContext types.FieldContext
+	var fieldContext telemetrytypes.FieldContext
 	switch context {
 	case "resource":
-		fieldContext = types.FieldContextResource
+		fieldContext = telemetrytypes.FieldContextResource
 	case "scope":
-		fieldContext = types.FieldContextScope
+		fieldContext = telemetrytypes.FieldContextScope
 	case "attribute":
-		fieldContext = types.FieldContextAttribute
+		fieldContext = telemetrytypes.FieldContextAttribute
 	default:
 		return nil // Not a telemetry column
 	}
 
 	// Check and convert data type
-	var fieldDataType types.FieldDataType
+	var fieldDataType telemetrytypes.FieldDataType
 	switch dataType {
 	case "string":
-		fieldDataType = types.FieldDataTypeString
+		fieldDataType = telemetrytypes.FieldDataTypeString
 	case "bool":
-		fieldDataType = types.FieldDataTypeBool
+		fieldDataType = telemetrytypes.FieldDataTypeBool
 	case "int", "int64":
-		fieldDataType = types.FieldDataTypeFloat64
+		fieldDataType = telemetrytypes.FieldDataTypeFloat64
 	case "float", "float64":
-		fieldDataType = types.FieldDataTypeFloat64
+		fieldDataType = telemetrytypes.FieldDataTypeFloat64
 	case "number":
-		fieldDataType = types.FieldDataTypeFloat64
+		fieldDataType = telemetrytypes.FieldDataTypeFloat64
 	default:
 		return nil // Unknown data type
 	}
@@ -88,18 +88,18 @@ func (v *TelemetryFieldVisitor) VisitColumnDef(expr *parser.ColumnDef) error {
 	fieldName := defaultExprStr[startIdx+2 : endIdx]
 
 	// Create and store the TelemetryFieldKey
-	field := types.TelemetryFieldKey{
+	field := telemetrytypes.TelemetryFieldKey{
 		Name:          fieldName,
 		FieldContext:  fieldContext,
 		FieldDataType: fieldDataType,
 		Materialized:  true,
 	}
 
-	v.Fields = append(v.Fields, field)
+	v.Fields = append(v.Fields, &field)
 	return nil
 }
 
-func ExtractFieldKeysFromTblStatement(statement string) ([]types.TelemetryFieldKey, error) {
+func ExtractFieldKeysFromTblStatement(statement string) ([]*telemetrytypes.TelemetryFieldKey, error) {
 	// Parse the CREATE TABLE statement using the ClickHouse parser
 	p := parser.NewParser(statement)
 	stmts, err := p.ParseStmts()
